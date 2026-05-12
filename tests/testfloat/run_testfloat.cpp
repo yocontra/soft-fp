@@ -26,8 +26,8 @@
 // including sNaN-input rows — goes through the flag gate; sNaN inputs raise
 // `SF64_FE_INVALID` per IEEE 754 §7.2 (wired in src/internal_arith.h and the
 // mode-parametric `_r` paths). The earlier carve-out for sNaN-input vectors
-// was lifted in v1.2.0; payload-bit preservation across the qNaN-force
-// remains under the `SOFT_FP64_SNAN_PROPAGATE` opt-in (see TODO.md).
+// was lifted in v1.2.0; payload-bit preservation across the historical
+// qNaN-force bypasses is controlled by the SOFT_FP64_SNAN build option.
 //
 // Any quiet-NaN result counts as "equal" to any expected quiet-NaN
 // (matches the existing test_arithmetic_exact.cpp convention). Non-NaN
@@ -74,6 +74,12 @@
 #ifndef SF64_TEST_FENV_MODE
 #define SF64_TEST_FENV_MODE 1
 #endif
+#ifndef SF64_TEST_OCL_MODE
+#define SF64_TEST_OCL_MODE 0
+#endif
+#ifndef SF64_TEST_OCL_FTZ_MODE
+#define SF64_TEST_OCL_FTZ_MODE 0
+#endif
 #if SF64_TEST_FENV_MODE == 1
 static constexpr bool kFlagsActive = true;
 #elif SF64_TEST_FENV_MODE == 2
@@ -114,6 +120,12 @@ inline double mul(double a, double b) {
 }
 inline double div_(double a, double b) {
     return sf64_div_ex(a, b, &g_state);
+}
+inline double remainder(double a, double b) {
+    return sf64_remainder_ex(a, b, &g_state);
+}
+inline double fmod_(double a, double b) {
+    return sf64_fmod_ex(a, b, &g_state);
 }
 inline double sqrt_(double x) {
     return sf64_sqrt_ex(x, &g_state);
@@ -240,6 +252,8 @@ inline uint64_t to_u64_r(sf64_rounding_mode m, double x) {
 #define sf64_sub ex_shim::sub
 #define sf64_mul ex_shim::mul
 #define sf64_div ex_shim::div_
+#define sf64_remainder ex_shim::remainder
+#define sf64_fmod ex_shim::fmod_
 #define sf64_sqrt ex_shim::sqrt_
 #define sf64_fma ex_shim::fma_
 #define sf64_from_f32 ex_shim::from_f32
@@ -299,6 +313,26 @@ static inline float f32_from_bits(uint32_t b) {
     std::memcpy(&f, &b, sizeof(f));
     return f;
 }
+
+#if SF64_TEST_OCL_MODE
+static inline bool is_subnormal64(uint64_t b) {
+    return ((b >> 52) & 0x7ffULL) == 0 && (b & 0x000fffffffffffffULL) != 0;
+}
+
+static inline double ocl_expected_in(double x) {
+#if SF64_TEST_OCL_FTZ_MODE
+    const uint64_t b = bits(x);
+    if (is_subnormal64(b)) {
+        return from_bits(b & 0x8000000000000000ULL);
+    }
+#endif
+    return x;
+}
+
+static inline double ocl_expected_out(double x) {
+    return ocl_expected_in(x);
+}
+#endif
 
 static inline bool nan_equiv(double got, double expect) {
     // NaN payloads can legitimately differ between impls; collapse.
@@ -473,39 +507,6 @@ static uint64_t run_f64_binop(const char* op, f64_binop fn, const std::vector<co
     return n;
 }
 
-// f64 binary, value-only — no flag verification. Used for ops whose
-// flag plumbing isn't reachable under the current build mode (e.g.
-// sf64_remainder under SOFT_FP64_FENV=explicit, which lives in the sleef
-// TU and uses the TLS SF64_FE_RAISE macro). The bit-exact result corpus
-// still runs at full size; only the fl2 comparison is skipped.
-static uint64_t run_f64_binop_no_flags(const char* op, f64_binop fn,
-                                       const std::vector<const char*>& flags) {
-    Proc p;
-    if (!p.open(mk_cmd(op, flags))) {
-        std::fprintf(stderr, "FAIL[%s]: cannot spawn testfloat_gen\n", op);
-        std::abort();
-    }
-    char line[256];
-    uint64_t n = 0;
-    while (std::fgets(line, sizeof(line), p.fp)) {
-        uint64_t v[4];
-        if (!parse_hex_n(line, 4, v))
-            fail(op, n, line, "parse");
-        const double a = from_bits(v[0]);
-        const double b = from_bits(v[1]);
-        const double z = from_bits(v[2]);
-        const double got = fn(a, b);
-        if (!nan_equiv(got, z)) {
-            char detail[128];
-            std::snprintf(detail, sizeof(detail), "got=0x%016" PRIx64 " expect=0x%016" PRIx64,
-                          bits(got), v[2]);
-            fail(op, n, line, detail);
-        }
-        ++n;
-    }
-    return n;
-}
-
 // f64 unary float→float: sqrt
 static uint64_t run_f64_unop(const char* op, double (*fn)(double),
                              const std::vector<const char*>& flags) {
@@ -543,6 +544,70 @@ static uint64_t run_f64_unop(const char* op, double (*fn)(double),
     }
     return n;
 }
+
+#if SF64_TEST_OCL_MODE
+static uint64_t run_f64_binop_ocl(const char* label, const char* gen_op, f64_binop strict_fn,
+                                  f64_binop ocl_fn, const std::vector<const char*>& flags) {
+    Proc p;
+    if (!p.open(mk_cmd(gen_op, flags))) {
+        std::fprintf(stderr, "FAIL[%s]: cannot spawn testfloat_gen\n", label);
+        std::abort();
+    }
+    char line[256];
+    uint64_t n = 0;
+    while (std::fgets(line, sizeof(line), p.fp)) {
+        uint64_t v[4];
+        if (!parse_hex_n(line, 4, v))
+            fail(label, n, line, "parse");
+        const double a = from_bits(v[0]);
+        const double b = from_bits(v[1]);
+        sf64_fe_clear(0x1Fu);
+        const double expected = ocl_expected_out(strict_fn(ocl_expected_in(a), ocl_expected_in(b)));
+        sf64_fe_clear(0x1Fu);
+        const double got = ocl_fn(a, b);
+        if (!nan_equiv(got, expected)) {
+            char detail[192];
+            std::snprintf(detail, sizeof(detail),
+                          "got=0x%016" PRIx64 " expect=0x%016" PRIx64 " a=0x%016" PRIx64
+                          " b=0x%016" PRIx64,
+                          bits(got), bits(expected), v[0], v[1]);
+            fail(label, n, line, detail);
+        }
+        ++n;
+    }
+    return n;
+}
+
+static uint64_t run_f64_unop_ocl(const char* label, const char* gen_op, double (*strict_fn)(double),
+                                 double (*ocl_fn)(double), const std::vector<const char*>& flags) {
+    Proc p;
+    if (!p.open(mk_cmd(gen_op, flags))) {
+        std::fprintf(stderr, "FAIL[%s]: cannot spawn testfloat_gen\n", label);
+        std::abort();
+    }
+    char line[256];
+    uint64_t n = 0;
+    while (std::fgets(line, sizeof(line), p.fp)) {
+        uint64_t v[3];
+        if (!parse_hex_n(line, 3, v))
+            fail(label, n, line, "parse");
+        const double a = from_bits(v[0]);
+        sf64_fe_clear(0x1Fu);
+        const double expected = ocl_expected_out(strict_fn(ocl_expected_in(a)));
+        sf64_fe_clear(0x1Fu);
+        const double got = ocl_fn(a);
+        if (!nan_equiv(got, expected)) {
+            char detail[192];
+            std::snprintf(detail, sizeof(detail),
+                          "got=0x%016" PRIx64 " expect=0x%016" PRIx64 " a=0x%016" PRIx64, bits(got),
+                          bits(expected), v[0]);
+            fail(label, n, line, detail);
+        }
+        ++n;
+    }
+    return n;
+}
+#endif
 
 // f64_mulAdd: (a*b)+c
 static uint64_t run_f64_mulAdd(uint64_t n_cases) {
@@ -1405,20 +1470,29 @@ int main() {
     run("f64_div", run_f64_binop("f64_div", sf64_div, {"-tininessbefore"}));
     // IEEE-754 `remainder` (round-to-nearest-even quotient) — lands via
     // sf64_remainder (fmod + tie-break). Rounding mode does not apply.
-    //
-    // Under explicit mode `sf64_remainder` lives in src/sleef/ and uses
-    // the TLS-mode SF64_FE_RAISE macro for its INVALID raises (the
-    // sleef path does not have an `_ex` variant — out of scope for the
-    // arithmetic / sqrt / fma / convert ABI extension). The bit-exact
-    // value check still runs; the flag check is suppressed via the
-    // `_no_flags` runner so the result corpus stays exercised.
-#if SF64_TEST_FENV_MODE == 2
-    run("f64_rem (no-flag-check)",
-        run_f64_binop_no_flags("f64_rem", sf64_remainder, {"-tininessbefore"}));
-#else
+    // Explicit-fenv builds route this call through sf64_remainder_ex via
+    // the shim above, so value and fl2 flag checks run in every active mode.
     run("f64_rem", run_f64_binop("f64_rem", sf64_remainder, {"-tininessbefore"}));
-#endif
     run("f64_sqrt", run_f64_unop("f64_sqrt", sf64_sqrt, {"-tininessbefore"}));
+
+#if SF64_TEST_OCL_MODE
+    // OpenCL compatibility surface: replay the TestFloat arithmetic streams
+    // through `sf64_ocl_*` and compare against strict soft-fp64 after applying
+    // the build's OCL entry/exit FTZ policy. The strict TestFloat pass above
+    // remains the numerical oracle; this tier validates that the OpenCL ABI
+    // feeds the same core with flushed inputs and flushed outputs.
+    std::printf("OpenCL ABI TestFloat-shaped FTZ pass (ftz=%d)\n", SF64_TEST_OCL_FTZ_MODE);
+    run("ocl_f64_add",
+        run_f64_binop_ocl("ocl_f64_add", "f64_add", sf64_add, sf64_ocl_add, {"-tininessbefore"}));
+    run("ocl_f64_sub",
+        run_f64_binop_ocl("ocl_f64_sub", "f64_sub", sf64_sub, sf64_ocl_sub, {"-tininessbefore"}));
+    run("ocl_f64_mul",
+        run_f64_binop_ocl("ocl_f64_mul", "f64_mul", sf64_mul, sf64_ocl_mul, {"-tininessbefore"}));
+    run("ocl_f64_div",
+        run_f64_binop_ocl("ocl_f64_div", "f64_div", sf64_div, sf64_ocl_div, {"-tininessbefore"}));
+    run("ocl_f64_sqrt", run_f64_unop_ocl("ocl_f64_sqrt", "f64_sqrt", sf64_sqrt, sf64_ocl_sqrt,
+                                         {"-tininessbefore"}));
+#endif
 
     // mulAdd has a hardcoded minimum of 6,133,248 vectors at level 1. The
     // runtime is ~15-30s depending on machine. Pass -n explicitly so we

@@ -22,16 +22,12 @@
  * - Arithmetic (add/sub/mul/div/fma/rem), convert (int <-> f64, f32 <-> f64),
  *   sqrt, rounding, classification, and sign-magnitude helpers are
  *   **bit-exact** vs. IEEE-754-2008 round-to-nearest-even.
- * - Transcendentals (SLEEF 3.6 purec-scalar port) carry an ULP bound
- *   documented per function. The numbers cited are the **worst-case ULP
- *   measured by `tests/test_transcendental_1ulp.cpp` against the system libm
- *   oracle** — not aspirational u10/u35 tier labels. See each function's
- *   docstring for the measured bound.
+ * - Transcendentals (SLEEF 3.6 purec-scalar port) carry ULP tiers gated
+ *   against MPFR in `tests/mpfr/test_mpfr_diff.cpp`; see README.md for the
+ *   release precision table.
  *
  * @section non_goals Non-goals
  *
- * - Signalling-NaN payload preservation (we quiet sNaN on entry; INVALID is
- *   still raised through the fenv surface when available).
  * - Complex-number math.
  * - `fp128` / `fp16` (separate project if ever needed).
  *
@@ -50,9 +46,11 @@
  * entries become no-ops and the corresponding raise-sites are compiled
  * out for zero runtime cost.
  *
- * sNaN inputs are **quieted** on entry — the quiet bit is forced on, and
- * the signalling payload is not preserved. `INVALID` is raised on sNaN
- * entry when fenv is enabled.
+ * sNaN inputs are **quieted** on entry and raise `INVALID` when fenv is
+ * enabled. The default `SOFT_FP64_SNAN=quiet` mode preserves the v1.2 NaN
+ * selection policy at the historical bypass sites; opt-in
+ * `SOFT_FP64_SNAN=propagate` preserves source NaN sign and payload bits
+ * there as well.
  *
  * @section abi ABI stability
  *
@@ -666,14 +664,9 @@ double sf64_log1p(double x);
  *    - `x ∈ [1e-6, 1e6],    |y| ≤ 50`     (moderate)
  *    - `x ∈ [1e-100, 1e100], |y| ≤ 5`     (x wide, y modest)
  *    - `x ∈ [1e-6, 1e3],    |y| ≤ 100`    (x modest, y wide)
- *  Outside these windows — specifically the "near-unit base × huge
- *  exponent" corner (`x ∈ [0.5, 2], |y| ≳ 200`) — ULP drifts to ~40 because
- *  `logk_dd` evaluates its tail polynomial on `x².hi` as a plain double,
- *  which caps the log DD at ~2^-56 relative and magnifies through
- *  `y · log(x)`. A full DD-Horner rewrite of the log minimax is pencilled
- *  in for v1.2 (see TODO.md). Consumers needing ≤1 ULP on that corner
- *  should compose from @ref sf64_log and @ref sf64_exp directly with
- *  their own DD arithmetic.
+ *  The log tail uses the DD-Horner rewrite landed in v1.1; measured
+ *  worst-case is inside U10 across the wider double range, while U35 remains
+ *  the release gate.
  *  Full IEEE special-case table:
  *    - `pow(x, ±0) = 1` for any `x` (including NaN).
  *    - `pow(±1, y) = 1` (including `y = NaN`).
@@ -872,6 +865,139 @@ double sf64_rint_r(sf64_rounding_mode mode, double x);
 /** @} */ // rounding
 
 /**
+ * @name ocl OpenCL C compatibility ABI
+ * @brief Optional additive surface emitted when built with
+ *        `SOFT_FP64_OCL=on`. The strict `sf64_*` symbols remain
+ *        subnormal-preserving; `sf64_ocl_*` applies the build's
+ *        `SOFT_FP64_FTZ` entry/exit policy. `sf64_native_*` maps OpenCL
+ *        `native_*` spellings onto the same ABI.
+ * @{
+ */
+
+double sf64_ocl_add(double a, double b);
+double sf64_ocl_sub(double a, double b);
+double sf64_ocl_mul(double a, double b);
+double sf64_ocl_div(double a, double b);
+double sf64_ocl_rem(double a, double b);
+double sf64_ocl_neg(double a);
+int sf64_ocl_fcmp(double a, double b, int pred);
+double sf64_ocl_fmin_precise(double a, double b);
+double sf64_ocl_fmax_precise(double a, double b);
+double sf64_ocl_from_f32(float x);
+float sf64_ocl_to_f32(double x);
+double sf64_ocl_from_i8(int8_t x);
+double sf64_ocl_from_i16(int16_t x);
+double sf64_ocl_from_i32(int32_t x);
+double sf64_ocl_from_i64(int64_t x);
+double sf64_ocl_from_u8(uint8_t x);
+double sf64_ocl_from_u16(uint16_t x);
+double sf64_ocl_from_u32(uint32_t x);
+double sf64_ocl_from_u64(uint64_t x);
+int8_t sf64_ocl_to_i8(double x);
+int16_t sf64_ocl_to_i16(double x);
+int32_t sf64_ocl_to_i32(double x);
+int64_t sf64_ocl_to_i64(double x);
+uint8_t sf64_ocl_to_u8(double x);
+uint16_t sf64_ocl_to_u16(double x);
+uint32_t sf64_ocl_to_u32(double x);
+uint64_t sf64_ocl_to_u64(double x);
+double sf64_ocl_sqrt(double x);
+double sf64_ocl_rsqrt(double x);
+double sf64_ocl_fma(double a, double b, double c);
+double sf64_ocl_floor(double x);
+double sf64_ocl_ceil(double x);
+double sf64_ocl_trunc(double x);
+double sf64_ocl_round(double x);
+double sf64_ocl_rint(double x);
+double sf64_ocl_fract(double x);
+double sf64_ocl_modf(double x, double* iptr);
+double sf64_ocl_ldexp(double x, int n);
+double sf64_ocl_frexp(double x, int* exp);
+int sf64_ocl_ilogb(double x);
+double sf64_ocl_logb(double x);
+int sf64_ocl_isnan(double x);
+int sf64_ocl_isinf(double x);
+int sf64_ocl_isfinite(double x);
+int sf64_ocl_isnormal(double x);
+int sf64_ocl_signbit(double x);
+double sf64_ocl_fabs(double x);
+double sf64_ocl_copysign(double x, double y);
+double sf64_ocl_fmin(double a, double b);
+double sf64_ocl_fmax(double a, double b);
+double sf64_ocl_fdim(double a, double b);
+double sf64_ocl_maxmag(double a, double b);
+double sf64_ocl_minmag(double a, double b);
+double sf64_ocl_nextafter(double x, double y);
+double sf64_ocl_hypot(double a, double b);
+double sf64_ocl_sin(double x);
+double sf64_ocl_cos(double x);
+double sf64_ocl_tan(double x);
+void sf64_ocl_sincos(double x, double* s, double* c);
+double sf64_ocl_asin(double x);
+double sf64_ocl_acos(double x);
+double sf64_ocl_atan(double x);
+double sf64_ocl_atan2(double y, double x);
+double sf64_ocl_sinpi(double x);
+double sf64_ocl_cospi(double x);
+double sf64_ocl_tanpi(double x);
+double sf64_ocl_asinpi(double x);
+double sf64_ocl_acospi(double x);
+double sf64_ocl_atanpi(double x);
+double sf64_ocl_atan2pi(double y, double x);
+double sf64_ocl_sinh(double x);
+double sf64_ocl_cosh(double x);
+double sf64_ocl_tanh(double x);
+double sf64_ocl_asinh(double x);
+double sf64_ocl_acosh(double x);
+double sf64_ocl_atanh(double x);
+double sf64_ocl_exp(double x);
+double sf64_ocl_exp2(double x);
+double sf64_ocl_exp10(double x);
+double sf64_ocl_expm1(double x);
+double sf64_ocl_log(double x);
+double sf64_ocl_log2(double x);
+double sf64_ocl_log10(double x);
+double sf64_ocl_log1p(double x);
+double sf64_ocl_pow(double x, double y);
+double sf64_ocl_powr(double x, double y);
+double sf64_ocl_pown(double x, int n);
+double sf64_ocl_rootn(double x, int n);
+double sf64_ocl_cbrt(double x);
+double sf64_ocl_erf(double x);
+double sf64_ocl_erfc(double x);
+double sf64_ocl_tgamma(double x);
+double sf64_ocl_lgamma(double x);
+double sf64_ocl_lgamma_r(double x, int* sign);
+double sf64_ocl_fmod(double x, double y);
+double sf64_ocl_remainder(double x, double y);
+float sf64_ocl_to_f32_r(sf64_rounding_mode mode, double x);
+int8_t sf64_ocl_to_i8_r(sf64_rounding_mode mode, double x);
+int16_t sf64_ocl_to_i16_r(sf64_rounding_mode mode, double x);
+int32_t sf64_ocl_to_i32_r(sf64_rounding_mode mode, double x);
+int64_t sf64_ocl_to_i64_r(sf64_rounding_mode mode, double x);
+uint8_t sf64_ocl_to_u8_r(sf64_rounding_mode mode, double x);
+uint16_t sf64_ocl_to_u16_r(sf64_rounding_mode mode, double x);
+uint32_t sf64_ocl_to_u32_r(sf64_rounding_mode mode, double x);
+uint64_t sf64_ocl_to_u64_r(sf64_rounding_mode mode, double x);
+
+double sf64_native_sin(double x);
+double sf64_native_cos(double x);
+double sf64_native_tan(double x);
+double sf64_native_exp(double x);
+double sf64_native_exp2(double x);
+double sf64_native_exp10(double x);
+double sf64_native_log(double x);
+double sf64_native_log2(double x);
+double sf64_native_log10(double x);
+double sf64_native_sqrt(double x);
+double sf64_native_rsqrt(double x);
+double sf64_native_recip(double x);
+double sf64_native_divide(double x, double y);
+double sf64_native_powr(double x, double y);
+
+/** @} */ // ocl
+
+/**
  * @name fenv IEEE-754 exception flags (thread-local)
  * @brief Sticky flag accumulators matching IEEE-754 §7.
  *
@@ -1004,6 +1130,8 @@ double sf64_mul_ex(double a, double b, sf64_fe_state_t* state);
 double sf64_div_ex(double a, double b, sf64_fe_state_t* state);
 double sf64_sqrt_ex(double x, sf64_fe_state_t* state);
 double sf64_fma_ex(double a, double b, double c, sf64_fe_state_t* state);
+double sf64_fmod_ex(double x, double y, sf64_fe_state_t* state);
+double sf64_remainder_ex(double x, double y, sf64_fe_state_t* state);
 
 /** @brief Mode-parametrised explicit-state addition. Combines the `_r`
  *  rounding-mode dispatch with the `_ex` caller-state ABI. */

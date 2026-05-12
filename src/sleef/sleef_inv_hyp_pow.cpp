@@ -79,22 +79,23 @@ using soft_fp64::sleef::detail::qNaN;
 // round-to-zero. We implement fmod via the classic repeated subtraction /
 // scaling identity without host FPU ops.
 
-extern "C" double sf64_fmod(double x, double y) {
-    // Stack-local fenv accumulator used by the sf64_* / DD macro helpers
-    // threaded through the body. We never flush it at return — IEEE §5.3.1
-    // says fmod is exact, so no inner arithmetic raise is observable on
-    // TLS. Preserves the pre-1.1 mask semantics without needing
-    // sf64_fe_save/restore around the loop.
-    soft_fp64::sleef::sf64_internal_fe_acc fe;
+static SF64_SLEEF_NOINLINE double fmod_impl(double x, double y,
+                                            soft_fp64::sleef::sf64_internal_fe_acc& fe) {
+    // Accumulator used by the sf64_* / DD macro helpers threaded through
+    // the body. We flush only explicit INVALID raises on early exits; the
+    // finite path deliberately does not flush at return because IEEE §5.3.1
+    // says fmod is exact, so no inner arithmetic raise is observable.
     if (isnan_(x) || isnan_(y)) {
         // IEEE 754 §7.2: sNaN input raises INVALID before payload propagation.
         if (is_snan_(x) || is_snan_(y)) {
-            SF64_FE_RAISE(SF64_FE_INVALID);
+            fe.raise(SF64_FE_INVALID);
+            fe.flush();
         }
-        return qNaN();
+        return soft_fp64::sleef::detail::propagate_nan_xy(x, y);
     }
     if (isinf_(x) || eq_(y, 0.0)) {
-        SF64_FE_RAISE(SF64_FE_INVALID);
+        fe.raise(SF64_FE_INVALID);
+        fe.flush();
         return qNaN();
     }
     if (isinf_(y))
@@ -123,19 +124,26 @@ extern "C" double sf64_fmod(double x, double y) {
     return signbit_(x) ? sf64_neg(r) : r;
 }
 
+extern "C" SF64_SLEEF_NOINLINE double sf64_fmod(double x, double y) {
+    soft_fp64::sleef::sf64_internal_fe_acc fe;
+    return fmod_impl(x, y, fe);
+}
+
 // IEEE-754 `remainder`: quotient rounded to nearest even. Implemented via
 // fmod + tie-break so the sign and parity rule match glibc / TestFloat.
-extern "C" double sf64_remainder(double x, double y) {
-    soft_fp64::sleef::sf64_internal_fe_acc fe;
+static SF64_SLEEF_NOINLINE double remainder_impl(double x, double y,
+                                                 soft_fp64::sleef::sf64_internal_fe_acc& fe) {
     if (isnan_(x) || isnan_(y)) {
         // IEEE 754 §7.2: sNaN input raises INVALID before payload propagation.
         if (is_snan_(x) || is_snan_(y)) {
-            SF64_FE_RAISE(SF64_FE_INVALID);
+            fe.raise(SF64_FE_INVALID);
+            fe.flush();
         }
-        return qNaN();
+        return soft_fp64::sleef::detail::propagate_nan_xy(x, y);
     }
     if (isinf_(x) || eq_(y, 0.0)) {
-        SF64_FE_RAISE(SF64_FE_INVALID);
+        fe.raise(SF64_FE_INVALID);
+        fe.flush();
         return qNaN();
     }
     if (isinf_(y))
@@ -165,6 +173,26 @@ extern "C" double sf64_remainder(double x, double y) {
     // Intentionally do NOT flush `fe`.
     return r;
 }
+
+extern "C" SF64_SLEEF_NOINLINE double sf64_remainder(double x, double y) {
+    soft_fp64::sleef::sf64_internal_fe_acc fe;
+    return remainder_impl(x, y, fe);
+}
+
+#if SOFT_FP64_FENV_MODE == 1 || SOFT_FP64_FENV_MODE == 2
+
+extern "C" SF64_SLEEF_NOINLINE double sf64_fmod_ex(double x, double y, sf64_fe_state_t* state) {
+    soft_fp64::sleef::sf64_internal_fe_acc fe{state};
+    return fmod_impl(x, y, fe);
+}
+
+extern "C" SF64_SLEEF_NOINLINE double sf64_remainder_ex(double x, double y,
+                                                        sf64_fe_state_t* state) {
+    soft_fp64::sleef::sf64_internal_fe_acc fe{state};
+    return remainder_impl(x, y, fe);
+}
+
+#endif
 
 // ========================================================================
 // TU-local DD helpers and minimax coefficients
@@ -203,7 +231,7 @@ inline double atan2k_core_poly(double s, soft_fp64::sleef::sf64_internal_fe_acc&
 // atan2k_u1(y, x): DD-carrying SLEEF-style atan2(|y|, |x|). Returns result
 // in DD. Swaps (y,x) when |y|>|x| so the polynomial argument stays ≤ 1,
 // eliminating the 0.414 reduction boundary that hurt the naive xatan.
-DD atan2k_u1_dd(DD y, DD x, soft_fp64::sleef::sf64_internal_fe_acc& fe) {
+SF64_SLEEF_NOINLINE DD atan2k_u1_dd(DD y, DD x, soft_fp64::sleef::sf64_internal_fe_acc& fe) {
     double q = 0.0;
     if (lt_(x.hi, 0.0)) {
         x.hi = sf64_neg(x.hi);
@@ -247,7 +275,8 @@ namespace soft_fp64::sleef {
 // log|d| as DD. Port of SLEEF 3.6 sleefdp.c::logk.  Hidden-visibility so the
 // symbol is usable from other SLEEF TUs (erfc/tgamma arg-reduction) without
 // joining the public ABI.
-[[gnu::visibility("hidden")]] DD sf64_internal_logk_dd(double d, sf64_internal_fe_acc& fe) {
+[[gnu::visibility("hidden")]] SF64_SLEEF_NOINLINE DD
+sf64_internal_logk_dd(double d, sf64_internal_fe_acc& fe) {
     int e;
     double m = sf64_frexp(d, &e);
     if (lt_(m, 0.70710678118654752440)) {
@@ -294,7 +323,8 @@ namespace soft_fp64::sleef {
 //   t = s + s²·t                 // DD
 //   t = 1 + t                    // DD
 //   result = ldexp(t.hi + t.lo, q)
-[[gnu::visibility("hidden")]] double sf64_internal_expk_dd(DD d, sf64_internal_fe_acc& fe) {
+[[gnu::visibility("hidden")]] SF64_SLEEF_NOINLINE double
+sf64_internal_expk_dd(DD d, sf64_internal_fe_acc& fe) {
     const double d_collapsed = sf64_add(d.hi, d.lo);
 
     if (gt_(d_collapsed, 709.78271289338399673222))
@@ -344,7 +374,8 @@ namespace soft_fp64::sleef {
 // part of the public ABI. The deep-underflow guard (`d.x < -1000 ⇒ 0`)
 // matches upstream so the caller's expk2(d)·u multiplication doesn't
 // produce a denormal trail.
-[[gnu::visibility("hidden")]] DD sf64_internal_expk2_dd(DD d, sf64_internal_fe_acc& fe) {
+[[gnu::visibility("hidden")]] SF64_SLEEF_NOINLINE DD
+sf64_internal_expk2_dd(DD d, sf64_internal_fe_acc& fe) {
     const double d_collapsed = sf64_add(d.hi, d.lo);
     const double qf = sf64_rint(sf64_mul(d_collapsed, kR_LN2));
     const int q = sf64_to_i32(qf);
@@ -392,7 +423,8 @@ namespace soft_fp64::sleef {
 // 2x + 2x·x²·P, then `e·ln2` is added with a DD ln2 split.
 //
 // Uses sf64_frexp/ldexp_2k to keep the scaling FPU-free.
-[[gnu::visibility("hidden")]] DD sf64_internal_logk2_dd(DD d, sf64_internal_fe_acc& fe) {
+[[gnu::visibility("hidden")]] SF64_SLEEF_NOINLINE DD
+sf64_internal_logk2_dd(DD d, sf64_internal_fe_acc& fe) {
     // SLEEF: e = ilogbk(d.x * (1.0/0.75)). We approximate with frexp on the
     // shifted value: frexp returns (m, e) with |m| ∈ [0.5, 1). For the SLEEF
     // form we want e such that d.hi/2^e ∈ [0.75, 1.5) approximately. The
@@ -438,7 +470,7 @@ namespace soft_fp64::sleef {
 // asin / acos / atan / atan2  (port of SLEEF 3.6 xasin/xacos/xatan/xatan2)
 // ========================================================================
 
-extern "C" double sf64_asin(double d) {
+extern "C" SF64_SLEEF_NOINLINE double sf64_asin(double d) {
     soft_fp64::sleef::sf64_internal_fe_acc fe;
     if (isnan_(d))
         return qNaN();
@@ -476,7 +508,7 @@ extern "C" double sf64_asin(double d) {
     return signbit_(d) ? sf64_neg(rr) : rr;
 }
 
-extern "C" double sf64_acos(double d) {
+extern "C" SF64_SLEEF_NOINLINE double sf64_acos(double d) {
     soft_fp64::sleef::sf64_internal_fe_acc fe;
     if (isnan_(d))
         return qNaN();
@@ -520,7 +552,7 @@ extern "C" double sf64_acos(double d) {
     return rr;
 }
 
-extern "C" double sf64_atan(double d) {
+extern "C" SF64_SLEEF_NOINLINE double sf64_atan(double d) {
     soft_fp64::sleef::sf64_internal_fe_acc fe;
     if (isnan_(d))
         return qNaN();
@@ -537,7 +569,7 @@ extern "C" double sf64_atan(double d) {
     return signbit_(d) ? sf64_neg(rr) : rr;
 }
 
-extern "C" double sf64_atan2(double y, double x) {
+extern "C" SF64_SLEEF_NOINLINE double sf64_atan2(double y, double x) {
     soft_fp64::sleef::sf64_internal_fe_acc fe;
     if (isnan_(x) || isnan_(y))
         return qNaN();
@@ -580,7 +612,7 @@ extern "C" double sf64_atan2(double y, double x) {
 // pow / cbrt  — port of SLEEF 3.6 xpow / xcbrt_u1
 // ========================================================================
 
-extern "C" double sf64_pow(double x, double y) {
+extern "C" SF64_SLEEF_NOINLINE double sf64_pow(double x, double y) {
     soft_fp64::sleef::sf64_internal_fe_acc fe;
     if (eq_(y, 0.0))
         return 1.0;
@@ -624,7 +656,7 @@ extern "C" double sf64_pow(double x, double y) {
     return r;
 }
 
-extern "C" double sf64_powr(double x, double y) {
+extern "C" SF64_SLEEF_NOINLINE double sf64_powr(double x, double y) {
     // IEEE 754-2019 §9.2.1 strict domain semantics. Every degenerate
     // case returns qNaN + INVALID except the pole at x=0, y<0 (which
     // returns +inf + DIVBYZERO). -0 is treated as a zero — `lt_` uses
@@ -667,11 +699,11 @@ extern "C" double sf64_powr(double x, double y) {
     return sf64_pow(x, y);
 }
 
-extern "C" double sf64_pown(double x, int n) {
+extern "C" SF64_SLEEF_NOINLINE double sf64_pown(double x, int n) {
     return sf64_pow(x, sf64_from_i32(n));
 }
 
-extern "C" double sf64_cbrt(double x) {
+extern "C" SF64_SLEEF_NOINLINE double sf64_cbrt(double x) {
     soft_fp64::sleef::sf64_internal_fe_acc fe;
     if (isnan_(x))
         return qNaN();
@@ -727,7 +759,7 @@ extern "C" double sf64_cbrt(double x) {
 // Hyperbolic — Taylor for small |x|, exp-based for mid/large
 // ========================================================================
 
-extern "C" double sf64_sinh(double x) {
+extern "C" SF64_SLEEF_NOINLINE double sf64_sinh(double x) {
     soft_fp64::sleef::sf64_internal_fe_acc fe;
     if (isnan_(x))
         return qNaN();
@@ -780,7 +812,7 @@ extern "C" double sf64_sinh(double x) {
     return signbit_(x) ? sf64_neg(half) : half;
 }
 
-extern "C" double sf64_cosh(double x) {
+extern "C" SF64_SLEEF_NOINLINE double sf64_cosh(double x) {
     soft_fp64::sleef::sf64_internal_fe_acc fe;
     if (isnan_(x))
         return qNaN();
@@ -809,7 +841,7 @@ extern "C" double sf64_cosh(double x) {
     return r;
 }
 
-extern "C" double sf64_tanh(double x) {
+extern "C" SF64_SLEEF_NOINLINE double sf64_tanh(double x) {
     soft_fp64::sleef::sf64_internal_fe_acc fe;
     if (isnan_(x))
         return qNaN();
@@ -849,7 +881,7 @@ extern "C" double sf64_tanh(double x) {
 // Inverse hyperbolic — DD-carried argument construction
 // ========================================================================
 
-extern "C" double sf64_asinh(double x) {
+extern "C" SF64_SLEEF_NOINLINE double sf64_asinh(double x) {
     soft_fp64::sleef::sf64_internal_fe_acc fe;
     if (isnan_(x))
         return qNaN();
@@ -878,7 +910,7 @@ extern "C" double sf64_asinh(double x) {
     return signbit_(x) ? sf64_neg(r) : r;
 }
 
-extern "C" double sf64_acosh(double x) {
+extern "C" SF64_SLEEF_NOINLINE double sf64_acosh(double x) {
     soft_fp64::sleef::sf64_internal_fe_acc fe;
     if (isnan_(x))
         return qNaN();
@@ -908,7 +940,7 @@ extern "C" double sf64_acosh(double x) {
     return r;
 }
 
-extern "C" double sf64_atanh(double x) {
+extern "C" SF64_SLEEF_NOINLINE double sf64_atanh(double x) {
     soft_fp64::sleef::sf64_internal_fe_acc fe;
     if (isnan_(x))
         return qNaN();

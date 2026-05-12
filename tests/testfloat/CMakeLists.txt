@@ -179,6 +179,15 @@ elseif(SOFT_FP64_FENV STREQUAL "disabled")
 elseif(SOFT_FP64_FENV STREQUAL "explicit")
     target_compile_definitions(run_testfloat PRIVATE SF64_TEST_FENV_MODE=2)
 endif()
+if(SOFT_FP64_OCL STREQUAL "on")
+    target_compile_definitions(run_testfloat PRIVATE
+        SF64_TEST_OCL_MODE=1
+        SF64_TEST_OCL_FTZ_MODE=${SOFT_FP64_FTZ_VALUE})
+else()
+    target_compile_definitions(run_testfloat PRIVATE
+        SF64_TEST_OCL_MODE=0
+        SF64_TEST_OCL_FTZ_MODE=0)
+endif()
 add_dependencies(run_testfloat testfloat_gen)
 
 add_test(NAME test_testfloat COMMAND run_testfloat)

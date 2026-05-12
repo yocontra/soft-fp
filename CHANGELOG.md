@@ -7,6 +7,97 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 Every numeric claim in this file traces to a specific CI-gated sweep.
 See `README.md` for the full precision table.
 
+## [Unreleased]
+
+No unreleased changes.
+
+## [1.3.0] — 2026-05-11
+
+Additive release on top of 1.2. Adds the OpenCL C compatibility ABI,
+the OpenCL `native_*` spelling tier, explicit-state remainder variants,
+and an opt-in IEEE 754 §6.2.3 sNaN payload propagation policy.
+
+### Added
+
+- **OpenCL C compatibility ABI (`SOFT_FP64_OCL=on`).** New optional
+  `src/ocl.cpp` emits a parallel `sf64_ocl_*` surface that forwards to
+  the strict `sf64_*` implementation while applying the configured
+  OpenCL denormal policy at ABI entry/exit. `SOFT_FP64_FTZ=off|on`
+  controls whether binary64 subnormal inputs and outputs on that
+  OpenCL surface are preserved or flushed to signed zero; the base
+  `sf64_*` ABI remains subnormal-preserving. The same build emits a
+  loose native tier for
+  `native_{sin,cos,tan,exp,exp2,exp10,log,log2,log10,sqrt,rsqrt,recip,divide,powr}`
+  as `sf64_native_*`; transcendental native entries use shorter
+  reduction / polynomial paths instead of aliasing the u10 SLEEF cores
+  (`sqrt`, `rsqrt`, `recip`, and `divide` intentionally reuse strict
+  arithmetic cores). `tests/test_ocl_mode.cpp` gates FTZ-on and FTZ-off
+  behavior for subnormal edges plus native smoke cases, `run_testfloat`
+  replays arithmetic streams through the OCL ABI with the configured FTZ
+  policy, and `test_mpfr_diff` adds an OCL flushed-edge row when
+  `SOFT_FP64_OCL=on`.
+- **`sf64_fmod_ex` / `sf64_remainder_ex`.** The exact SLEEF-side
+  remainder functions now have caller-state ABI variants, closing the
+  explicit-fenv gap called out by the OpenCL-mode work. Their normal
+  finite paths still swallow inner arithmetic flags per IEEE §5.3.1;
+  only observable `INVALID` raises are flushed into TLS or the caller's
+  `sf64_fe_state_t`. `tests/testfloat/run_testfloat.cpp` now routes
+  `f64_rem` through `sf64_remainder_ex` under
+  `SOFT_FP64_FENV=explicit`, so value and `fl2` flag checks run in that
+  mode too.
+- **`SOFT_FP64_SNAN=quiet|propagate` build option.** Default `quiet`
+  preserves pre-1.2 behaviour at the four sites where soft-fp64 today
+  emits a non-source-derived NaN (`sf64_sub` / `sf64_sub_r` corrupting
+  source-NaN sign via the `b ^ kSignMask` fast-path; `sf64_fmod` /
+  `sf64_remainder` returning canonical qNaN on any NaN input).
+  `propagate` is IEEE 754-2008 §6.2.3-strict: the source NaN's sign
+  and payload bits 50:0 survive every op, with bit 51 (quiet bit)
+  forced. Wired as `SOFT_FP64_SNAN_PROPAGATE=0|1` PRIVATE on the lib
+  target (does not leak into install consumers' compile lines).
+  Implementation diff is bounded: the propagation paths
+  (`propagate_nan`, `sqrt`, `fma`, f32 widen / narrow) already
+  preserved sign + payload via `from_bits(src | kQuietNaNBit)` in
+  both modes, so no patch was needed there — only `sf64_internal_sub_rne`
+  (`src/internal_arith.h`), the new `sub_r_impl` helper consolidating
+  `sf64_sub_r` + `sf64_sub_r_ex` in `src/arithmetic.cpp`, and the
+  fmod / remainder NaN-result sites via the new
+  `propagate_nan_xy(x, y)` helper in `src/sleef/sleef_internal.h`.
+- **`tests/test_snan_payload.cpp` — bit-exact sNaN sign / payload probe.**
+  Asserts the contract under both `SOFT_FP64_SNAN_PROPAGATE` values via
+  `#if`-gated bit comparisons against hand-derived patterns (no oracle
+  involved — the §6.2.3 contract is implementation-defined and the
+  test pins it directly). Covers `add` / `sub` / `mul` / `div` / `sqrt`
+  / `fma` / `from_f32` / `to_f32` / `fmod` / `remainder` with both
+  signs of sNaN (`0x7FF00000DEADBEEF`, `0xFFF00000CAFEBABE`); spot-
+  checks `SF64_FE_INVALID` is still raised on sNaN inputs.
+- **CI cells `build-test-snan-propagate` and `build-test-ocl-ftz`.**
+  The sNaN cell exercises `-DSOFT_FP64_SNAN=propagate`; the OpenCL cell
+  exercises `-DSOFT_FP64_OCL=on -DSOFT_FP64_FTZ=on`. The default matrix
+  covers quiet/subnormal-preserving behavior.
+
+### Fixed
+
+- **`sf64_sub(x, sNaN)` corrupted the source NaN's sign under
+  `SOFT_FP64_SNAN=propagate`.** `sf64_internal_sub_rne` and
+  `sf64_sub_r` historically implemented `a - b` as
+  `add(a, neg(b))` via an unconditional `bb ^ kSignMask`. When `b`
+  was the source NaN that won the §6.2.3 selection, the result
+  emerged with the sign bit flipped — a §6.2.3 violation. Both
+  paths now run a sNaN-aware fast-path under propagate mode that
+  raises `SF64_FE_INVALID` and returns `propagate_nan(ab, bb)`
+  before the XOR sees `b`. The non-NaN hot loop is unchanged in
+  both modes; under the default `quiet` mode the historical
+  sign-flip behaviour is preserved bit-exactly (and pinned by the
+  new probe test) so this is purely additive.
+- **`sf64_fmod` / `sf64_remainder` discarded source NaN sign +
+  payload under `SOFT_FP64_SNAN=propagate`.** Both ops returned
+  `qNaN()` (`0x7FF8000000000000`) on any NaN input, losing the
+  source NaN's bits. The new `propagate_nan_xy(x, y)` helper in
+  `src/sleef/sleef_internal.h` selects the source NaN per §6.2.3
+  (prefer `x` if NaN, else `y`) and OR's the quiet bit; under
+  `quiet` mode it falls back to `qNaN()` exactly. INVALID raise
+  on sNaN remains in place at both call sites.
+
 ## [1.2.0] — 2026-04-26
 
 Substantial release. Closes the AGX recursion-hang surfaced by
@@ -201,6 +292,8 @@ and surfaces `soft_fp64_SOURCE_DIR` / `soft_fp64_SLEEF_SOURCE_DIR` /
   and the `include/soft_fp64/` header path is unchanged. Only the
   GitHub URL moves.
 
+[Unreleased]: https://github.com/yocontra/soft-fp/compare/v1.3.0...HEAD
+[1.3.0]: https://github.com/yocontra/soft-fp/releases/tag/v1.3.0
 [1.2.0]: https://github.com/yocontra/soft-fp/releases/tag/v1.2.0
 
 ## [1.1.0] — 2026-04-24

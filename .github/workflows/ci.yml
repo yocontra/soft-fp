@@ -229,6 +229,88 @@ jobs:
         run: ctest --test-dir build-fenv-explicit -V --output-on-failure
 
   # ---------------------------------------------------------------------------
+  # 1e. SOFT_FP64_SNAN=propagate build + ctest.
+  #
+  # soft-fp64 ships an opt-in §6.2.3-strict sNaN propagation mode:
+  #   quiet     — sub(x, sNaN) inherits flipped sign; fmod / remainder return
+  #               canonical qNaN on NaN inputs (default; preserves pre-1.2
+  #               behavior).
+  #   propagate — sub preserves source-NaN sign; fmod / remainder propagate
+  #               source NaN sign + payload bits 50:0 with bit 51 forced.
+  #
+  # The matrix above uses the quiet default. This cell exercises the propagate
+  # path so the §6.2.3 branch in `sf64_internal_sub_rne`, `sub_r_impl`, and
+  # `propagate_nan_xy` doesn't drift silently. tests/test_snan_payload.cpp
+  # asserts the bit-exact contract under both branches via the
+  # SOFT_FP64_SNAN_PROPAGATE compile-def. Ubuntu 24.04 + clang Release is
+  # enough — the propagation paths are architecture-independent.
+  # ---------------------------------------------------------------------------
+  build-test-snan-propagate:
+    name: build-test (snan=propagate)
+    runs-on: ubuntu-24.04
+    env:
+      CC: clang
+      CXX: clang++
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install MPFR + GMP
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libmpfr-dev libgmp-dev
+
+      - name: Configure (snan=propagate)
+        run: |
+          cmake -B build-snan-propagate -G "Unix Makefiles" \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_C_COMPILER=clang \
+            -DCMAKE_CXX_COMPILER=clang++ \
+            -DSOFT_FP64_SNAN=propagate
+
+      - name: Build
+        run: cmake --build build-snan-propagate --parallel
+
+      - name: Test
+        run: ctest --test-dir build-snan-propagate -V --output-on-failure
+
+  # ---------------------------------------------------------------------------
+  # 1f. SOFT_FP64_OCL=on + SOFT_FP64_FTZ=on build + ctest.
+  #
+  # Exercises the additive OpenCL C compatibility surface (`sf64_ocl_*` and
+  # `sf64_native_*`) with binary64 denormal flushing enabled at ABI entry/exit.
+  # The strict `sf64_*` ABI stays subnormal-preserving; tests/test_ocl_mode.cpp
+  # pins the wrapper behavior and native spelling smoke cases.
+  # ---------------------------------------------------------------------------
+  build-test-ocl-ftz:
+    name: build-test (ocl ftz)
+    runs-on: ubuntu-24.04
+    env:
+      CC: clang
+      CXX: clang++
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install MPFR + GMP
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libmpfr-dev libgmp-dev
+
+      - name: Configure (ocl ftz)
+        run: |
+          cmake -B build-ocl-ftz -G "Unix Makefiles" \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_C_COMPILER=clang \
+            -DCMAKE_CXX_COMPILER=clang++ \
+            -DSOFT_FP64_OCL=on \
+            -DSOFT_FP64_FTZ=on
+
+      - name: Build
+        run: cmake --build build-ocl-ftz --parallel
+
+      - name: Test
+        run: ctest --test-dir build-ocl-ftz -V --output-on-failure
+
+  # ---------------------------------------------------------------------------
   # 2. ASan + UBSan (single config — no threading, so no TSan; MSan deferred).
   # ---------------------------------------------------------------------------
   sanitizers:

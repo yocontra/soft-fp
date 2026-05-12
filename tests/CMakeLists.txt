@@ -18,7 +18,11 @@ set(SF64_CORE_TESTS
     test_reentrancy
     test_fenv
     test_fenv_threads
+    test_snan_payload
 )
+if(SOFT_FP64_OCL STREQUAL "on")
+    list(APPEND SF64_CORE_TESTS test_ocl_mode)
+endif()
 
 find_package(Threads REQUIRED)
 
@@ -45,6 +49,28 @@ foreach(_test IN LISTS SF64_CORE_TESTS)
             elseif(SOFT_FP64_FENV STREQUAL "explicit")
                 target_compile_definitions(${_test} PRIVATE SF64_TEST_FENV_MODE=2)
             endif()
+        endif()
+        if(${_test} STREQUAL "test_snan_payload")
+            # Probe test asserts bit-exact NaN sign/payload behavior under
+            # the build-time SOFT_FP64_SNAN policy. The lib's compile-def is
+            # PRIVATE so the test reads the same value via SOFT_FP64_SNAN
+            # cache var to keep the install-consumer compile line clean. The
+            # fenv mode is passed separately so explicit/disabled builds skip
+            # TLS flag assertions against the intentionally no-op legacy
+            # surface.
+            target_compile_definitions(${_test} PRIVATE
+                SOFT_FP64_SNAN_PROPAGATE=${SOFT_FP64_SNAN_PROPAGATE_VALUE})
+            if(SOFT_FP64_FENV STREQUAL "tls")
+                target_compile_definitions(${_test} PRIVATE SF64_TEST_FENV_MODE=1)
+            elseif(SOFT_FP64_FENV STREQUAL "disabled")
+                target_compile_definitions(${_test} PRIVATE SF64_TEST_FENV_MODE=0)
+            elseif(SOFT_FP64_FENV STREQUAL "explicit")
+                target_compile_definitions(${_test} PRIVATE SF64_TEST_FENV_MODE=2)
+            endif()
+        endif()
+        if(${_test} STREQUAL "test_ocl_mode")
+            target_compile_definitions(${_test} PRIVATE
+                SOFT_FP64_FTZ_MODE=${SOFT_FP64_FTZ_VALUE})
         endif()
         if(${_test} STREQUAL "test_rounding_modes")
             # Host FPU oracle under std::fesetround needs the compiler to

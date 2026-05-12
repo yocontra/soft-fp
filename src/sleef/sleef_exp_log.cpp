@@ -72,7 +72,7 @@ namespace {
 
 // ilogb2k(d) = unbiased exponent field of |d|.  SLEEF source:
 //   (int)((doubleToRawLongBits(d) >> 52) & 0x7ff) - 0x3ff
-SF64_ALWAYS_INLINE int ilogb2k_bits(double d) noexcept {
+SF64_SLEEF_INLINE int ilogb2k_bits(double d) noexcept {
     const uint64_t b = bits_of(d);
     const int e = static_cast<int>((b >> 52) & 0x7ff) - 0x3ff;
     return e;
@@ -81,11 +81,11 @@ SF64_ALWAYS_INLINE int ilogb2k_bits(double d) noexcept {
 // ldexp2k / ldexp3k: scale by 2^q via sf64_ldexp. The two
 // flavours differ in SLEEF by how large |q| can be before an intermediate
 // underflow — but sf64_ldexp handles the full range already.
-SF64_ALWAYS_INLINE double ldexp2k_f(double d, int q) noexcept {
+SF64_SLEEF_INLINE double ldexp2k_f(double d, int q) noexcept {
     return sf64_ldexp(d, q);
 }
 
-SF64_ALWAYS_INLINE double ldexp3k_f(double d, int q) noexcept {
+SF64_SLEEF_INLINE double ldexp3k_f(double d, int q) noexcept {
     return sf64_ldexp(d, q);
 }
 
@@ -157,8 +157,8 @@ constexpr double kLN2 = 0.693147180559945286226764;        // DD hi
 constexpr double kLN2_LO = 2.319046813846299558417771e-17; // DD lo
 
 // SLEEF's Horner eval for a POLY10 expressed as nested fmas (all via sf64_fma).
-SF64_ALWAYS_INLINE double poly10_horner(double x, const double c[10],
-                                        soft_fp64::sleef::sf64_internal_fe_acc& fe) noexcept {
+SF64_SLEEF_INLINE double poly10_horner(double x, const double c[10],
+                                       soft_fp64::sleef::sf64_internal_fe_acc& fe) noexcept {
     double u = c[0];
     u = mla(u, x, c[1]);
     u = mla(u, x, c[2]);
@@ -172,8 +172,8 @@ SF64_ALWAYS_INLINE double poly10_horner(double x, const double c[10],
     return u;
 }
 
-SF64_ALWAYS_INLINE double poly7_horner(double x, const double c[7],
-                                       soft_fp64::sleef::sf64_internal_fe_acc& fe) noexcept {
+SF64_SLEEF_INLINE double poly7_horner(double x, const double c[7],
+                                      soft_fp64::sleef::sf64_internal_fe_acc& fe) noexcept {
     double u = c[0];
     u = mla(u, x, c[1]);
     u = mla(u, x, c[2]);
@@ -238,7 +238,8 @@ namespace soft_fp64::sleef {
 // ----------------------------------------------------------------------
 // sf64_internal_exp_core — SLEEF xexp (u10) — degree-10 minimax.
 // ----------------------------------------------------------------------
-[[gnu::visibility("hidden")]] double sf64_internal_exp_core(double d, sf64_internal_fe_acc& fe) {
+[[gnu::visibility("hidden")]] SF64_SLEEF_NOINLINE double
+sf64_internal_exp_core(double d, sf64_internal_fe_acc& fe) {
     if (isnan_(d))
         return qNaN();
     if (gt_(d, 709.782712893383996732223))
@@ -273,7 +274,8 @@ namespace soft_fp64::sleef {
 // ----------------------------------------------------------------------
 // sf64_internal_log_core — SLEEF xlog_u1 (u10) — degree-7 minimax + DD re-assembly.
 // ----------------------------------------------------------------------
-[[gnu::visibility("hidden")]] double sf64_internal_log_core(double d, sf64_internal_fe_acc& fe) {
+[[gnu::visibility("hidden")]] SF64_SLEEF_NOINLINE double
+sf64_internal_log_core(double d, sf64_internal_fe_acc& fe) {
     if (isnan_(d) || lt_(d, 0.0))
         return qNaN();
     if (eq_(d, 0.0))
@@ -326,7 +328,7 @@ namespace soft_fp64::sleef {
 using soft_fp64::sleef::sf64_internal_exp_core;
 using soft_fp64::sleef::sf64_internal_log_core;
 
-extern "C" double sf64_exp(double x) {
+extern "C" SF64_SLEEF_NOINLINE double sf64_exp(double x) {
     soft_fp64::sleef::sf64_internal_fe_acc fe;
     const double r = sf64_internal_exp_core(x, fe);
     fe.flush();
@@ -336,7 +338,7 @@ extern "C" double sf64_exp(double x) {
 // ----------------------------------------------------------------------
 // sf64_exp2 — SLEEF xexp2 (u10) native impl.
 // ----------------------------------------------------------------------
-extern "C" double sf64_exp2(double x) {
+extern "C" SF64_SLEEF_NOINLINE double sf64_exp2(double x) {
     soft_fp64::sleef::sf64_internal_fe_acc fe;
     if (isnan_(x))
         return qNaN();
@@ -366,7 +368,7 @@ extern "C" double sf64_exp2(double x) {
 // ----------------------------------------------------------------------
 // sf64_exp10 — SLEEF xexp10 (u10) native impl.
 // ----------------------------------------------------------------------
-extern "C" double sf64_exp10(double x) {
+extern "C" SF64_SLEEF_NOINLINE double sf64_exp10(double x) {
     soft_fp64::sleef::sf64_internal_fe_acc fe;
     if (isnan_(x))
         return qNaN();
@@ -399,7 +401,7 @@ extern "C" double sf64_exp10(double x) {
 // ----------------------------------------------------------------------
 // sf64_expm1 — SLEEF xexpm1 via DD exp core (expk2).
 // ----------------------------------------------------------------------
-extern "C" double sf64_expm1(double x) {
+extern "C" SF64_SLEEF_NOINLINE double sf64_expm1(double x) {
     soft_fp64::sleef::sf64_internal_fe_acc fe;
     if (isnan_(x))
         return qNaN();
@@ -420,7 +422,7 @@ extern "C" double sf64_expm1(double x) {
     return r;
 }
 
-extern "C" double sf64_log(double x) {
+extern "C" SF64_SLEEF_NOINLINE double sf64_log(double x) {
     soft_fp64::sleef::sf64_internal_fe_acc fe;
     const double r = sf64_internal_log_core(x, fe);
     fe.flush();
@@ -430,7 +432,7 @@ extern "C" double sf64_log(double x) {
 // ----------------------------------------------------------------------
 // sf64_log2 — SLEEF xlog2 (u10) — same reduction, different DD fold-in.
 // ----------------------------------------------------------------------
-extern "C" double sf64_log2(double x) {
+extern "C" SF64_SLEEF_NOINLINE double sf64_log2(double x) {
     soft_fp64::sleef::sf64_internal_fe_acc fe;
     if (isnan_(x) || lt_(x, 0.0))
         return qNaN();
@@ -468,7 +470,7 @@ extern "C" double sf64_log2(double x) {
 // ----------------------------------------------------------------------
 // sf64_log10 — SLEEF xlog10 (u10).
 // ----------------------------------------------------------------------
-extern "C" double sf64_log10(double x) {
+extern "C" SF64_SLEEF_NOINLINE double sf64_log10(double x) {
     soft_fp64::sleef::sf64_internal_fe_acc fe;
     if (isnan_(x) || lt_(x, 0.0))
         return qNaN();
@@ -506,7 +508,7 @@ extern "C" double sf64_log10(double x) {
 // ----------------------------------------------------------------------
 // sf64_log1p — SLEEF xlog1p (u10).
 // ----------------------------------------------------------------------
-extern "C" double sf64_log1p(double x) {
+extern "C" SF64_SLEEF_NOINLINE double sf64_log1p(double x) {
     soft_fp64::sleef::sf64_internal_fe_acc fe;
     if (isnan_(x) || lt_(x, -1.0))
         return qNaN();

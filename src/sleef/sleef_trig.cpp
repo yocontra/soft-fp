@@ -111,26 +111,26 @@ constexpr double kTAU_L = 1.2246467991473532072e-16 * 2.0;
 
 // ---- bit-level scale / sign helpers (pure bit reinterprets, no FPU) -----
 
-SF64_ALWAYS_INLINE double mulsign_(double x, double y) noexcept {
+SF64_SLEEF_INLINE double mulsign_(double x, double y) noexcept {
     // SAFETY: manipulate the sign bit via bit-cast only.
     const uint64_t xb = bits_of(x);
     const uint64_t yb = bits_of(y);
     return from_bits(xb ^ (yb & 0x8000000000000000ULL));
 }
 
-SF64_ALWAYS_INLINE double orsign_(double x, double y) noexcept {
+SF64_SLEEF_INLINE double orsign_(double x, double y) noexcept {
     // SAFETY: manipulate the sign bit via bit-cast only.
     const uint64_t xb = bits_of(x);
     const uint64_t yb = bits_of(y);
     return from_bits(xb | (yb & 0x8000000000000000ULL));
 }
 
-SF64_ALWAYS_INLINE int ilogb2k_(double d) noexcept {
+SF64_SLEEF_INLINE int ilogb2k_(double d) noexcept {
     // SAFETY: pure bit read of the IEEE-754 exponent field.
     return static_cast<int>((bits_of(d) >> 52) & 0x7FF) - 0x3FF;
 }
 
-SF64_ALWAYS_INLINE double ldexp3k_(double d, int e) noexcept {
+SF64_SLEEF_INLINE double ldexp3k_(double d, int e) noexcept {
     // SAFETY: add e to the biased exponent field directly; caller
     // guarantees the result stays in the normal range.
     const uint64_t b = bits_of(d) + (static_cast<uint64_t>(static_cast<int64_t>(e)) << 52);
@@ -1451,8 +1451,7 @@ struct RempiSub {
 // rempisub(x) — returns (d, i) where d = x - rint(4x)*0.25 and
 // i = rint(4x) - rint(x)*4 (mod 4). Bit-exact rounding via the
 // "add 2^52, subtract" trick (SLEEF `rempisub`).
-SF64_ALWAYS_INLINE RempiSub rempisub(double x,
-                                     soft_fp64::sleef::sf64_internal_fe_acc& fe) noexcept {
+SF64_SLEEF_INLINE RempiSub rempisub(double x, soft_fp64::sleef::sf64_internal_fe_acc& fe) noexcept {
     RempiSub ret;
     const double fourx = sf64_mul(4.0, x);
     const double absfx = sf64_fabs(fourx);
@@ -1472,8 +1471,8 @@ struct RempiResult {
     int32_t q;
 };
 
-SF64_ALWAYS_INLINE RempiResult rempi_(double a_in,
-                                      soft_fp64::sleef::sf64_internal_fe_acc& fe) noexcept {
+SF64_SLEEF_INLINE RempiResult rempi_(double a_in,
+                                     soft_fp64::sleef::sf64_internal_fe_acc& fe) noexcept {
     const double absa = sf64_fabs(a_in);
     int ex = ilogb2k_(absa) - 55;
     int qshift = (ex > (700 - 55)) ? -64 : 0;
@@ -1522,7 +1521,7 @@ constexpr double kSinU1NegSixth = -0.166666666666666657414808; // ≈ -1/3!
 // Polynomial cores for sinpi / cospi — SLEEF `sinpik` / `cospik`.
 // ========================================================================
 
-SF64_ALWAYS_INLINE DD sinpi_core(double d, soft_fp64::sleef::sf64_internal_fe_acc& fe) noexcept {
+SF64_SLEEF_INLINE DD sinpi_core(double d, soft_fp64::sleef::sf64_internal_fe_acc& fe) noexcept {
     const double u4 = sf64_mul(d, 4.0);
     const double cu = sf64_ceil(u4);
     const int32_t cu_i = sf64_to_i32(cu);
@@ -1566,7 +1565,7 @@ SF64_ALWAYS_INLINE DD sinpi_core(double d, soft_fp64::sleef::sf64_internal_fe_ac
     return x;
 }
 
-SF64_ALWAYS_INLINE DD cospi_core(double d, soft_fp64::sleef::sf64_internal_fe_acc& fe) noexcept {
+SF64_SLEEF_INLINE DD cospi_core(double d, soft_fp64::sleef::sf64_internal_fe_acc& fe) noexcept {
     const double u4 = sf64_mul(d, 4.0);
     const double cu = sf64_ceil(u4);
     const int32_t cu_i = sf64_to_i32(cu);
@@ -1616,7 +1615,8 @@ SF64_ALWAYS_INLINE DD cospi_core(double d, soft_fp64::sleef::sf64_internal_fe_ac
 // reflection branch (x < 0.5) in sleef_stubs.cpp::sf64_tgamma /
 // sf64_lgamma. Hidden visibility — not part of the public ABI.
 namespace soft_fp64::sleef {
-[[gnu::visibility("hidden")]] DD sf64_internal_sinpik_dd(double d, sf64_internal_fe_acc& fe) {
+[[gnu::visibility("hidden")]] SF64_SLEEF_NOINLINE DD
+sf64_internal_sinpik_dd(double d, sf64_internal_fe_acc& fe) {
     return sinpi_core(d, fe);
 }
 } // namespace soft_fp64::sleef
@@ -1625,7 +1625,7 @@ namespace soft_fp64::sleef {
 // Forward trig — sin / cos / sincos / tan
 // ========================================================================
 
-extern "C" double sf64_sin(double d) {
+extern "C" SF64_SLEEF_NOINLINE double sf64_sin(double d) {
     soft_fp64::sleef::sf64_internal_fe_acc fe;
     if (isnan_(d) || isinf_(d))
         return qNaN();
@@ -1683,7 +1683,7 @@ extern "C" double sf64_sin(double d) {
     return r;
 }
 
-extern "C" double sf64_cos(double d) {
+extern "C" SF64_SLEEF_NOINLINE double sf64_cos(double d) {
     soft_fp64::sleef::sf64_internal_fe_acc fe;
     if (isnan_(d) || isinf_(d))
         return qNaN();
@@ -1755,14 +1755,14 @@ extern "C" double sf64_cos(double d) {
     return r;
 }
 
-extern "C" void sf64_sincos(double d, double* s_out, double* c_out) {
+extern "C" SF64_SLEEF_NOINLINE void sf64_sincos(double d, double* s_out, double* c_out) {
     if (s_out)
         *s_out = sf64_sin(d);
     if (c_out)
         *c_out = sf64_cos(d);
 }
 
-extern "C" double sf64_tan(double d) {
+extern "C" SF64_SLEEF_NOINLINE double sf64_tan(double d) {
     soft_fp64::sleef::sf64_internal_fe_acc fe;
     if (isnan_(d) || isinf_(d))
         return qNaN();
@@ -1842,7 +1842,7 @@ namespace {
 constexpr double kSinpiClamp = 2.5e8;
 }
 
-extern "C" double sf64_sinpi(double x) {
+extern "C" SF64_SLEEF_NOINLINE double sf64_sinpi(double x) {
     soft_fp64::sleef::sf64_internal_fe_acc fe;
     if (isnan_(x) || isinf_(x))
         return qNaN();
@@ -1856,7 +1856,7 @@ extern "C" double sf64_sinpi(double x) {
     return ret;
 }
 
-extern "C" double sf64_cospi(double x) {
+extern "C" SF64_SLEEF_NOINLINE double sf64_cospi(double x) {
     soft_fp64::sleef::sf64_internal_fe_acc fe;
     if (isnan_(x) || isinf_(x))
         return qNaN();
@@ -1868,7 +1868,7 @@ extern "C" double sf64_cospi(double x) {
     return ret;
 }
 
-extern "C" double sf64_tanpi(double x) {
+extern "C" SF64_SLEEF_NOINLINE double sf64_tanpi(double x) {
     soft_fp64::sleef::sf64_internal_fe_acc fe;
     if (isnan_(x) || isinf_(x))
         return qNaN();

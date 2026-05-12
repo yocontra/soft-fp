@@ -71,6 +71,15 @@ target_link_libraries(test_mpfr_diff
 # Matching the other sf64 tests: forbid host FMA contraction and libm
 # errno side-effects. Soft-fp64 correctness depends on these.
 target_compile_options(test_mpfr_diff PRIVATE -ffp-contract=off -fno-math-errno)
+if(SOFT_FP64_OCL STREQUAL "on")
+    target_compile_definitions(test_mpfr_diff PRIVATE
+        SF64_TEST_OCL_MODE=1
+        SF64_TEST_OCL_FTZ_MODE=${SOFT_FP64_FTZ_VALUE})
+else()
+    target_compile_definitions(test_mpfr_diff PRIVATE
+        SF64_TEST_OCL_MODE=0
+        SF64_TEST_OCL_FTZ_MODE=0)
+endif()
 
 add_test(NAME test_mpfr_diff COMMAND test_mpfr_diff)
 # MPFR sweeps at precision 200 are not fast — give the driver room.

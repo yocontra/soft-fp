@@ -405,8 +405,9 @@ static SF64_ALWAYS_INLINE double add_r_impl(double a, double b, sf64_rounding_mo
     const uint32_t b_sign = extract_sign(bb);
 
     // NaN propagation. IEEE 754 §7.2: any arithmetic op on a sNaN input
-    // raises INVALID before quieting the payload. (Payload-preservation
-    // beyond the quiet-bit set is parked for 1.2 with SOFT_FP64_SNAN_PROPAGATE.)
+    // raises INVALID before quieting the payload. The SOFT_FP64_SNAN policy
+    // controls the few historical bypass paths; this direct propagate_nan
+    // path already preserves source sign/payload after forcing the quiet bit.
     if (is_nan_bits(ab) || is_nan_bits(bb)) {
         if (is_snan_bits(ab) || is_snan_bits(bb)) {
             fe.raise(SF64_FE_INVALID);
@@ -475,9 +476,30 @@ extern "C" double sf64_sub(double a, double b) {
     return r;
 }
 
+// Mode-parametric sub. The RNE-only path lives in `sf64_internal_sub_rne`
+// (internal_arith.h); this is the directed-rounding variant. The `_r_ex`
+// surface forwards through here too — keep the NaN dispatch in one place.
+static SF64_ALWAYS_INLINE double sub_r_impl(double a, double b, sf64_rounding_mode mode,
+                                            sf64_internal_fe_acc& fe) noexcept {
+#if SOFT_FP64_SNAN_PROPAGATE
+    // See sf64_internal_sub_rne for the rationale: the `sf64_neg(b)` below
+    // flips b's sign before NaN dispatch sees it, so a sNaN-b would emerge
+    // with the wrong sign. In propagate mode, dispatch on NaN first.
+    const uint64_t ab = bits_of(a);
+    const uint64_t bb = bits_of(b);
+    if (is_nan_bits(ab) || is_nan_bits(bb)) {
+        if (is_snan_bits(ab) || is_snan_bits(bb)) {
+            fe.raise(SF64_FE_INVALID);
+        }
+        return propagate_nan(ab, bb);
+    }
+#endif
+    return add_r_impl(a, sf64_neg(b), mode, fe);
+}
+
 extern "C" double sf64_sub_r(sf64_rounding_mode mode, double a, double b) {
     sf64_internal_fe_acc fe;
-    const double r = add_r_impl(a, sf64_neg(b), mode, fe);
+    const double r = sub_r_impl(a, b, mode, fe);
     fe.flush();
     return r;
 }
@@ -762,7 +784,7 @@ extern "C" double sf64_sub_ex(double a, double b, sf64_fe_state_t* state) {
 extern "C" double sf64_sub_r_ex(sf64_rounding_mode mode, double a, double b,
                                 sf64_fe_state_t* state) {
     sf64_internal_fe_acc fe{state};
-    const double r = add_r_impl(a, sf64_neg(b), mode, fe);
+    const double r = sub_r_impl(a, b, mode, fe);
     fe.flush();
     return r;
 }

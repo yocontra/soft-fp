@@ -43,6 +43,13 @@
 #include <limits>
 #include <vector>
 
+#ifndef SF64_TEST_OCL_MODE
+#define SF64_TEST_OCL_MODE 0
+#endif
+#ifndef SF64_TEST_OCL_FTZ_MODE
+#define SF64_TEST_OCL_FTZ_MODE 0
+#endif
+
 extern "C" {
 // Prototypes mirrored so this TU compiles even if the public header reorders
 // symbols. The linker is the ground truth for the sf64_* ABI.
@@ -109,6 +116,11 @@ uint16_t sf64_to_u16_r(sf64_rounding_mode, double);
 uint32_t sf64_to_u32_r(sf64_rounding_mode, double);
 uint64_t sf64_to_u64_r(sf64_rounding_mode, double);
 double sf64_rint_r(sf64_rounding_mode, double);
+
+#if SF64_TEST_OCL_MODE
+double sf64_ocl_exp(double);
+double sf64_ocl_sin(double);
+#endif
 }
 
 namespace {
@@ -119,6 +131,12 @@ inline uint64_t bits(double x) {
     uint64_t u;
     std::memcpy(&u, &x, sizeof(u));
     return u;
+}
+
+inline double from_bits(uint64_t u) {
+    double x;
+    std::memcpy(&x, &u, sizeof(x));
+    return x;
 }
 
 // Inlined locally so this subdir can build without pulling in tests/host_oracle.h.
@@ -138,6 +156,26 @@ inline int64_t ulp_diff(double a, double b) {
     int64_t d = sa - sb;
     return d < 0 ? -d : d;
 }
+
+#if SF64_TEST_OCL_MODE
+inline bool is_subnormal_bits(uint64_t b) {
+    return ((b >> 52) & 0x7ffULL) == 0 && (b & 0x000fffffffffffffULL) != 0;
+}
+
+inline double ocl_expected_in(double x) {
+#if SF64_TEST_OCL_FTZ_MODE
+    const uint64_t b = bits(x);
+    if (is_subnormal_bits(b)) {
+        return from_bits(b & 0x8000000000000000ULL);
+    }
+#endif
+    return x;
+}
+
+inline double ocl_expected_out(double x) {
+    return ocl_expected_in(x);
+}
+#endif
 
 // ---------- Deterministic LCG (copied inline) -----------------------------
 
@@ -944,6 +982,28 @@ void edge_spot_checks() {
     }
 }
 
+#if SF64_TEST_OCL_MODE
+Stats sweep_ocl_flushed_edges() {
+    Stats s;
+    s.name = "ocl-flushed-edges";
+    s.tier = BIT_EXACT;
+
+    const double denorm = std::numeric_limits<double>::denorm_min();
+    const double sin_in = ocl_expected_in(denorm);
+    record(s, denorm, 0.0, sf64_ocl_sin(denorm), ocl_expected_out(ref1(mpfr_sin, sin_in)));
+
+    const double neg_denorm = -std::numeric_limits<double>::denorm_min();
+    const double neg_sin_in = ocl_expected_in(neg_denorm);
+    record(s, neg_denorm, 0.0, sf64_ocl_sin(neg_denorm),
+           ocl_expected_out(ref1(mpfr_sin, neg_sin_in)));
+
+    const double exp_tail = -745.0;
+    record(s, exp_tail, 0.0, sf64_ocl_exp(exp_tail), ocl_expected_out(ref1(mpfr_exp, exp_tail)));
+
+    return s;
+}
+#endif
+
 // ---------- Per-mode bit-exact sweeps -------------------------------------
 //
 // The `sf64_*_r(mode, ...)` surface must match MPFR bit-for-bit across all
@@ -1304,11 +1364,9 @@ int main() {
     //   "pow"         — moderate: x∈[1e-6, 1e6], y∈[-50, 50]   (main claim)
     //   "pow-xbig"    — x wide, y modest: x∈[1e-100, 1e100], y∈[-5, 5]
     //   "pow-ybig"    — x modest, y wide: x∈[1e-6, 1e3], y∈[-100, 100]
-    // Precision drifts above U35 in the "near-unit base × huge exponent"
-    // regime (x∈[0.5, 2], |y|≥200) because `logk_dd` evaluates its tail
-    // polynomial on x².hi as a plain double, which caps the log DD at
-    // ~2^-56 relative. A full DD-Horner rewrite of the log minimax is
-    // tracked in TODO.md; in the meantime we document the bounded range.
+    // The log tail uses the DD-Horner rewrite landed in v1.1, so measured
+    // worst-case is inside U10 across the wider double range; U35 remains
+    // the release gate for these overlapping bounded windows.
     // x log-sampled across 12 decades (positive only — pow with negative
     // base + non-integer y returns NaN, which would dominate trivial
     // matches); y is a narrow linear range so linear sampling is fine.
@@ -1430,6 +1488,9 @@ int main() {
         std::numeric_limits<double>::denorm_min(), 1e150, /*y_sym=*/true, 0xBADDBADDULL));
 
     edge_spot_checks();
+#if SF64_TEST_OCL_MODE
+    results.push_back(sweep_ocl_flushed_edges());
+#endif
 
     std::printf("\n[max-ULP vs MPFR@%d, rounded to double]\n", static_cast<int>(ORACLE_PREC));
     int failures = 0;

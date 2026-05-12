@@ -117,6 +117,14 @@ void test_invalid() {
     sf64_rem(1.0, 0.0);
     expect(has_all(SF64_FE_INVALID), "rem 1%0 → INVALID");
 
+    clear_all();
+    sf64_fmod(kInf, 1.0);
+    expect(has_all(SF64_FE_INVALID), "fmod inf%1 → INVALID");
+
+    clear_all();
+    sf64_remainder(1.0, 0.0);
+    expect(has_all(SF64_FE_INVALID), "remainder 1%0 → INVALID");
+
     // sqrt of negative finite / negative inf.
     clear_all();
     sf64_sqrt(-1.0);
@@ -404,6 +412,15 @@ void test_explicit_state() {
     sf64_fe_clear_ex(&st, 0x1Fu);
     (void)sf64_fma_ex(kInf, 0.0, 1.0, &st);
     expect(sf64_fe_getall_ex(&st) == SF64_FE_INVALID, "fma_ex(inf,0,1) → INVALID in state");
+
+    // INVALID via fmod_ex / remainder_ex.
+    sf64_fe_clear_ex(&st, 0x1Fu);
+    (void)sf64_fmod_ex(kInf, 1.0, &st);
+    expect(sf64_fe_getall_ex(&st) == SF64_FE_INVALID, "fmod_ex(inf,1) → INVALID in state");
+
+    sf64_fe_clear_ex(&st, 0x1Fu);
+    (void)sf64_remainder_ex(1.0, 0.0, &st);
+    expect(sf64_fe_getall_ex(&st) == SF64_FE_INVALID, "remainder_ex(1,0) → INVALID in state");
 
     // INVALID via to_i32_ex(NaN).
     sf64_fe_clear_ex(&st, 0x1Fu);

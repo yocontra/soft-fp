@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.20)
 project(soft_fp64
-    VERSION 1.2.0
+    VERSION 1.3.0
     DESCRIPTION "Portable bit-exact IEEE-754 binary64 soft-float library"
     LANGUAGES CXX)
 
@@ -48,6 +48,31 @@ target_sources(soft_fp64 PRIVATE
     src/sleef/sleef_stubs.cpp
 )
 
+# Optional OpenCL C compatibility ABI. The strict `sf64_*` surface always
+# preserves subnormals; this additive surface emits `sf64_ocl_*` wrappers and
+# OpenCL-style `sf64_native_*` entry points. FTZ is scoped to that surface.
+set(SOFT_FP64_OCL "off" CACHE STRING
+    "Build OpenCL C compatibility ABI: off | on")
+set_property(CACHE SOFT_FP64_OCL PROPERTY STRINGS off on)
+set(SOFT_FP64_FTZ "off" CACHE STRING
+    "Flush binary64 subnormal inputs/outputs to signed zero on the OpenCL ABI: off | on")
+set_property(CACHE SOFT_FP64_FTZ PROPERTY STRINGS off on)
+if(SOFT_FP64_FTZ STREQUAL "off")
+    set(SOFT_FP64_FTZ_VALUE 0)
+elseif(SOFT_FP64_FTZ STREQUAL "on")
+    set(SOFT_FP64_FTZ_VALUE 1)
+else()
+    message(FATAL_ERROR "SOFT_FP64_FTZ must be off | on")
+endif()
+if(SOFT_FP64_OCL STREQUAL "on")
+    target_sources(soft_fp64 PRIVATE src/ocl.cpp)
+    target_compile_definitions(soft_fp64 PRIVATE
+        SOFT_FP64_OCL_ENABLED=1
+        SOFT_FP64_FTZ_MODE=${SOFT_FP64_FTZ_VALUE})
+elseif(NOT SOFT_FP64_OCL STREQUAL "off")
+    message(FATAL_ERROR "SOFT_FP64_OCL must be off | on")
+endif()
+
 # IEEE-754 exception-flag storage. `tls` uses a thread_local accumulator;
 # `disabled` compiles every raise / query to a no-op (zero-cost); `explicit`
 # emits the parallel `sf64_*_ex` caller-state ABI for GPU / SIMT consumers
@@ -66,6 +91,26 @@ elseif(SOFT_FP64_FENV STREQUAL "explicit")
 else()
     message(FATAL_ERROR "SOFT_FP64_FENV must be tls | disabled | explicit")
 endif()
+
+# sNaN policy. `quiet` (default) returns canonical-payload qNaN from the four
+# sites (sub sign-flip, fmod/remainder NaN-result paths) that today drop the
+# source NaN's sign / payload. `propagate` makes those sites preserve the
+# source NaN's sign and the 51 payload bits, with bit 51 (quiet bit) forced —
+# IEEE 754-2008 §6.2.3 strict mode. The other propagation paths
+# (propagate_nan, sqrt, fma, f32 widen/narrow) already preserve payload in
+# both modes; only the four bypass sites differ.
+set(SOFT_FP64_SNAN "quiet" CACHE STRING
+    "sNaN policy: quiet (default — canonical NaN at four bypass sites) | propagate (§6.2.3 source-NaN preservation)")
+set_property(CACHE SOFT_FP64_SNAN PROPERTY STRINGS quiet propagate)
+if(SOFT_FP64_SNAN STREQUAL "quiet")
+    set(SOFT_FP64_SNAN_PROPAGATE_VALUE 0)
+elseif(SOFT_FP64_SNAN STREQUAL "propagate")
+    set(SOFT_FP64_SNAN_PROPAGATE_VALUE 1)
+else()
+    message(FATAL_ERROR "SOFT_FP64_SNAN must be quiet | propagate")
+endif()
+target_compile_definitions(soft_fp64 PRIVATE
+    SOFT_FP64_SNAN_PROPAGATE=${SOFT_FP64_SNAN_PROPAGATE_VALUE})
 
 # Soft-fp64 TUs must not have `a*b+c` fused into llvm.fma.f64 at -O3 —
 # fma depends on add/mul and we'd create a link-time cycle. Disable

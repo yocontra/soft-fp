@@ -41,12 +41,11 @@ behavior on a device without a hardware fp64 unit.
 ## Where this is useful
 
 Targets and toolchains that currently have no good story for `double`
-when the hardware lacks an fp64 unit. Integration work for each is
-tracked in `TODO.md`.
+when the hardware lacks an fp64 unit. Examples include:
 
-- **SYCL on Apple GPUs.** AdaptiveCpp's Metal SSCP emitter compiles
-  fp64 but traps at runtime. Linking soft-fp64 into libkernel bitcode
-  lets `double` kernels run (much slower than fp32, but correct).
+- **SYCL on Apple GPUs.** AdaptiveCpp-style Metal SSCP frontends can
+  compile soft-fp64 into libkernel bitcode and lower `double` kernels
+  to integer-backed helper calls (much slower than fp32, but correct).
 - **`torch.float64` on MPS.** PyTorch's MPS backend errors on fp64.
   A dispatch path backed by this library would produce a working
   (slow) tensor.
@@ -147,6 +146,27 @@ extern "C" double __acpp_sscp_soft_f64_add(double a, double b) {
 
 That keeps vendor-specific naming where it belongs (in the vendor's
 frontend) and lets the library stay generic.
+
+### OpenCL C compatibility ABI
+
+For frontends that need OpenCL-style `double` behavior without changing the
+strict IEEE `sf64_*` symbols, build with:
+
+```bash
+cmake -S . -B build-ocl -DSOFT_FP64_OCL=on -DSOFT_FP64_FTZ=on
+```
+
+This emits an additive `sf64_ocl_*` ABI that forwards through the same
+verified implementation while applying the configured binary64 FTZ policy at
+entry/exit. `SOFT_FP64_FTZ=on` flushes binary64 subnormal inputs and outputs
+to signed zero on that OpenCL surface only; the base `sf64_*` ABI remains
+subnormal-preserving. The same build also exports OpenCL spelling aliases for
+`native_{sin,cos,tan,exp,exp2,exp10,log,log2,log10,sqrt,rsqrt,recip,divide,powr}`
+as `sf64_native_*`. The transcendental native entries use a deliberately
+looser implementation tier (shorter reduction / polynomial paths, with
+strict fallbacks for extreme special cases) and do not carry the u10/u35
+precision claims in the table below; `sqrt`, `rsqrt`, `recip`, and `divide`
+reuse the strict cores.
 
 ### AdaptiveCpp Metal backend
 
@@ -330,25 +350,25 @@ lookup table. Build option `SOFT_FP64_FENV`:
 - `tls` (default on hosted builds) — thread-local accumulator.
 - `disabled` — every raise-site compiles out and every `sf64_fe_*` entry
   becomes a no-op; zero runtime cost on the hot path.
-- `explicit` — reserved for a caller-provided state ABI; currently
-  compiles as `disabled`.
+- `explicit` — emits the caller-provided `sf64_*_ex` state ABI without
+  thread-local storage; the legacy `sf64_fe_*` TLS surface is linkable but
+  observably no-op.
 
 ```bash
 cmake -S . -B build -DSOFT_FP64_FENV=disabled     # no flag overhead
+cmake -S . -B build -DSOFT_FP64_FENV=explicit     # caller-state ABI
 cmake -S . -B build                                # default: tls
 ```
 
 Full-corpus flag parity is gated by `tests/testfloat/run_testfloat.cpp`
 against Berkeley SoftFloat's `fl2` column (7.16M vectors,
-`-tininessbefore`, `-exact`). sNaN-input rows are skipped pending
-payload preservation in 1.2.
+`-tininessbefore`, `-exact`). sNaN-input rows go through the same flag
+gate; payload/sign policy is pinned separately by `tests/test_snan_payload.cpp`.
 
 ## Non-goals
 
-- No sNaN payload preservation (sNaN inputs are quieted on entry;
-  `INVALID` is still raised when fenv is enabled).
 - No complex-number math.
-- No fp128 / fp16 sibling in this library.
+- No fp16 / bfloat16 / decimal floating point.
 
 ## Build
 

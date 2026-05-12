@@ -362,6 +362,21 @@ SF64_ALWAYS_INLINE double sf64_internal_sub_rne(double a, double b,
                                                 sf64_internal_fe_acc& fe) noexcept {
     // a - b = a + (-b); flip sign bit of b via integer XOR.
     const uint64_t bb = bits_of(b);
+#if SOFT_FP64_SNAN_PROPAGATE
+    // The XOR flips the sign of b unconditionally, including when b is a
+    // sNaN — that corrupts the source-NaN sign on the propagated result
+    // (§6.2.3 violation). In propagate mode, run the NaN dispatch first so
+    // sub(x, sNaN) preserves b's original sign instead of inheriting the
+    // sign of -b. The non-NaN path still goes through the XOR + add fast
+    // path so the hot loop is unchanged.
+    const uint64_t ab = bits_of(a);
+    if (is_nan_bits(ab) || is_nan_bits(bb)) {
+        if (is_snan_bits(ab) || is_snan_bits(bb)) {
+            fe.raise(SF64_FE_INVALID);
+        }
+        return propagate_nan(ab, bb);
+    }
+#endif
     return sf64_internal_add_rne(a, from_bits(bb ^ kSignMask), fe);
 }
 

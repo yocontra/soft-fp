@@ -47,20 +47,44 @@ inline constexpr double kInf = __builtin_huge_val();
 
 // ---- canonical quiet NaN -----------------------------------------------
 
-SF64_ALWAYS_INLINE double qNaN() noexcept {
+SF64_SLEEF_INLINE double qNaN() noexcept {
     // SAFETY: constant bit pattern for a canonical quiet NaN (exp=all 1s,
     // MSB of mantissa set, payload bits zero, sign=0). Bit-reinterpret only.
     return from_bits(0x7FF8000000000000ULL);
 }
 
+// IEEE 754-2008 §6.2.3 source-NaN propagation for two-input ops whose NaN
+// dispatch currently returns a canonical qNaN (e.g. fmod, remainder). When
+// SOFT_FP64_SNAN_PROPAGATE is on, return the source NaN with the quiet bit
+// forced — preserving sign and bits 50:0 of the original payload. Otherwise
+// fall back to the canonical qNaN. Caller is responsible for raising INVALID
+// on sNaN inputs before calling this helper. At least one of `x`, `y` must
+// already be classified as NaN by the caller — this helper does not validate
+// that and will return the operand whose bit pattern looks NaN-shaped.
+SF64_SLEEF_INLINE double propagate_nan_xy(double x, double y) noexcept {
+#if SOFT_FP64_SNAN_PROPAGATE
+    constexpr uint64_t kQuietBit = 0x0008000000000000ULL;
+    const uint64_t bx = soft_fp64::internal::bits_of(x);
+    const uint64_t by = soft_fp64::internal::bits_of(y);
+    if (soft_fp64::internal::is_nan_bits(bx)) {
+        return soft_fp64::internal::from_bits(bx | kQuietBit);
+    }
+    return soft_fp64::internal::from_bits(by | kQuietBit);
+#else
+    (void)x;
+    (void)y;
+    return qNaN();
+#endif
+}
+
 // ---- integer predicates (no host FPU arithmetic in the body) ------------
 
-SF64_ALWAYS_INLINE bool is_int(double x, soft_fp64::sleef::sf64_internal_fe_acc& fe) noexcept {
+SF64_SLEEF_INLINE bool is_int(double x, soft_fp64::sleef::sf64_internal_fe_acc& fe) noexcept {
     return soft_fp64::sleef::eq_(
         soft_fp64::sleef::sub_(x, soft_fp64::internal::sf64_internal_trunc(x), fe), 0.0);
 }
 
-SF64_ALWAYS_INLINE bool is_odd_int(double x, soft_fp64::sleef::sf64_internal_fe_acc& fe) noexcept {
+SF64_SLEEF_INLINE bool is_odd_int(double x, soft_fp64::sleef::sf64_internal_fe_acc& fe) noexcept {
     if (!is_int(x, fe))
         return false;
     const double half = soft_fp64::sleef::mul_(x, 0.5, fe);
@@ -88,8 +112,10 @@ namespace soft_fp64::sleef {
 // reference so the flag raise never rotates through TLS inside the hot
 // transcendental inner loops. The SLEEF public entry that invoked them
 // flushes once at return.
-[[gnu::visibility("hidden")]] double sf64_internal_exp_core(double d, sf64_internal_fe_acc& fe);
-[[gnu::visibility("hidden")]] double sf64_internal_log_core(double d, sf64_internal_fe_acc& fe);
+[[gnu::visibility("hidden")]] SF64_SLEEF_NOINLINE double
+sf64_internal_exp_core(double d, sf64_internal_fe_acc& fe);
+[[gnu::visibility("hidden")]] SF64_SLEEF_NOINLINE double
+sf64_internal_log_core(double d, sf64_internal_fe_acc& fe);
 
 // DD-carrying exp/log cores. `logk_dd(d)` returns log|d| as a DD pair
 // (target ≈ 2^-106 relative); `expk_dd(d)` takes a DD argument and returns
@@ -100,8 +126,10 @@ namespace soft_fp64::sleef {
 // (erfc deep tail, tgamma near-overflow) can build its exp argument in DD
 // too. Hidden visibility so they stay out of the public ABI — the `nm -g`
 // CI check on `install-smoke` depends on this.
-[[gnu::visibility("hidden")]] DD sf64_internal_logk_dd(double d, sf64_internal_fe_acc& fe);
-[[gnu::visibility("hidden")]] double sf64_internal_expk_dd(DD d, sf64_internal_fe_acc& fe);
+[[gnu::visibility("hidden")]] SF64_SLEEF_NOINLINE DD
+sf64_internal_logk_dd(double d, sf64_internal_fe_acc& fe);
+[[gnu::visibility("hidden")]] SF64_SLEEF_NOINLINE double
+sf64_internal_expk_dd(DD d, sf64_internal_fe_acc& fe);
 
 // DD-returning variants used by the SLEEF 3.6 `xerf_u1`, `xerfc_u15`,
 // `xtgamma_u1`, `xlgamma_u1` ports in `sleef_stubs.cpp`.
@@ -119,8 +147,11 @@ namespace soft_fp64::sleef {
 // DD precision through the multiplication with the denominator sweep.
 //
 // All three are hidden-visibility — they are NOT public ABI.
-[[gnu::visibility("hidden")]] DD sf64_internal_expk2_dd(DD d, sf64_internal_fe_acc& fe);
-[[gnu::visibility("hidden")]] DD sf64_internal_logk2_dd(DD d, sf64_internal_fe_acc& fe);
-[[gnu::visibility("hidden")]] DD sf64_internal_sinpik_dd(double d, sf64_internal_fe_acc& fe);
+[[gnu::visibility("hidden")]] SF64_SLEEF_NOINLINE DD
+sf64_internal_expk2_dd(DD d, sf64_internal_fe_acc& fe);
+[[gnu::visibility("hidden")]] SF64_SLEEF_NOINLINE DD
+sf64_internal_logk2_dd(DD d, sf64_internal_fe_acc& fe);
+[[gnu::visibility("hidden")]] SF64_SLEEF_NOINLINE DD
+sf64_internal_sinpik_dd(double d, sf64_internal_fe_acc& fe);
 
 } // namespace soft_fp64::sleef

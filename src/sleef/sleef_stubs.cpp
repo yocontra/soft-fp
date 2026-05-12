@@ -91,7 +91,7 @@ constexpr double kInvPI_lo = -1.9678676675182486e-17;
 // best we can get is about (ulp(angle) + ulp(angle) * |lo/hi|) ~ 1 ULP.
 // Well within the U35 (<= 8 ULP) band that the test spec pins for asinpi et al.
 
-extern "C" double sf64_asinpi(double x) {
+extern "C" SF64_SLEEF_NOINLINE double sf64_asinpi(double x) {
     soft_fp64::sleef::sf64_internal_fe_acc fe;
     const double a = sf64_asin(x);
     if (isnan_(a) || isinf_(a))
@@ -104,7 +104,7 @@ extern "C" double sf64_asinpi(double x) {
     return r;
 }
 
-extern "C" double sf64_acospi(double x) {
+extern "C" SF64_SLEEF_NOINLINE double sf64_acospi(double x) {
     soft_fp64::sleef::sf64_internal_fe_acc fe;
     const double a = sf64_acos(x);
     if (isnan_(a) || isinf_(a))
@@ -116,7 +116,7 @@ extern "C" double sf64_acospi(double x) {
     return r;
 }
 
-extern "C" double sf64_atanpi(double x) {
+extern "C" SF64_SLEEF_NOINLINE double sf64_atanpi(double x) {
     soft_fp64::sleef::sf64_internal_fe_acc fe;
     const double a = sf64_atan(x);
     if (isnan_(a))
@@ -131,7 +131,7 @@ extern "C" double sf64_atanpi(double x) {
     return r;
 }
 
-extern "C" double sf64_atan2pi(double y, double x) {
+extern "C" SF64_SLEEF_NOINLINE double sf64_atan2pi(double y, double x) {
     soft_fp64::sleef::sf64_internal_fe_acc fe;
     const double a = sf64_atan2(y, x);
     if (isnan_(a))
@@ -147,7 +147,7 @@ extern "C" double sf64_atan2pi(double y, double x) {
 // rootn(x, n) = x^(1/n) with sign handling for odd n
 // ========================================================================
 
-extern "C" double sf64_rootn(double x, int n) {
+extern "C" SF64_SLEEF_NOINLINE double sf64_rootn(double x, int n) {
     soft_fp64::sleef::sf64_internal_fe_acc fe;
     if (isnan_(x))
         return qNaN();
@@ -247,8 +247,8 @@ constexpr double kErfU1Tail[] = {
 
 // SLEEF poly4dd: evaluates `(x*x)*(x*c3+c2) + (x*c1+c0)` where c0..c2 are
 // DD constants and c3 is a plain double. Mirrors `poly4dd` upstream.
-SF64_ALWAYS_INLINE DD poly4dd_(double x, double c3, DD c2, DD c1, DD c0,
-                               soft_fp64::sleef::sf64_internal_fe_acc& fe) noexcept {
+SF64_SLEEF_INLINE DD poly4dd_(double x, double c3, DD c2, DD c1, DD c0,
+                              soft_fp64::sleef::sf64_internal_fe_acc& fe) noexcept {
     const double x2 = sf64_mul(x, x);
     // p1 = c3*x + c2   (DD: scalar c3 times x is a plain double, then add c2 DD)
     const DD p1 = ddadd2_dd_d_dd(sf64_mul(c3, x), c2);
@@ -260,7 +260,7 @@ SF64_ALWAYS_INLINE DD poly4dd_(double x, double c3, DD c2, DD c1, DD c0,
 
 } // namespace
 
-extern "C" double sf64_erf(double x) {
+extern "C" SF64_SLEEF_NOINLINE double sf64_erf(double x) {
     soft_fp64::sleef::sf64_internal_fe_acc fe;
     if (isnan_(x))
         return qNaN();
@@ -328,7 +328,7 @@ extern "C" double sf64_erf(double x) {
     return r;
 }
 
-extern "C" double sf64_erfc(double x) {
+extern "C" SF64_SLEEF_NOINLINE double sf64_erfc(double x) {
     soft_fp64::sleef::sf64_internal_fe_acc fe;
     if (isnan_(x))
         return qNaN();
@@ -454,7 +454,7 @@ struct GammakRet {
     DD div;
 };
 
-GammakRet gammak(double a, soft_fp64::sleef::sf64_internal_fe_acc& fe) {
+SF64_SLEEF_NOINLINE GammakRet gammak(double a, soft_fp64::sleef::sf64_internal_fe_acc& fe) {
     DD clc{0.0, 0.0};
     DD clln{1.0, 0.0};
     DD clld{1.0, 0.0};
@@ -637,7 +637,7 @@ GammakRet gammak(double a, soft_fp64::sleef::sf64_internal_fe_acc& fe) {
 
 } // namespace
 
-extern "C" double sf64_tgamma(double x) {
+extern "C" SF64_SLEEF_NOINLINE double sf64_tgamma(double x) {
     soft_fp64::sleef::sf64_internal_fe_acc fe;
     if (isnan_(x))
         return qNaN();
@@ -666,7 +666,7 @@ extern "C" double sf64_tgamma(double x) {
     return r;
 }
 
-extern "C" double sf64_lgamma_r(double x, int* sign) {
+extern "C" SF64_SLEEF_NOINLINE double sf64_lgamma_r(double x, int* sign) {
     soft_fp64::sleef::sf64_internal_fe_acc fe;
 
     if (sign)
@@ -707,7 +707,7 @@ extern "C" double sf64_lgamma_r(double x, int* sign) {
     return r;
 }
 
-extern "C" double sf64_lgamma(double x) {
+extern "C" SF64_SLEEF_NOINLINE double sf64_lgamma(double x) {
     int s = 1;
     return sf64_lgamma_r(x, &s);
 }
