@@ -11,7 +11,13 @@
 #elif defined(_MSC_VER)
 #define SF64_ALWAYS_INLINE __forceinline
 #define SF64_NOINLINE __declspec(noinline)
+#if defined(SOFT_FP_BUILD_SHARED)
 #define SF64_EXPORT __declspec(dllexport)
+#elif defined(SOFT_FP_USE_SHARED)
+#define SF64_EXPORT __declspec(dllimport)
+#else
+#define SF64_EXPORT
+#endif
 #else
 #define SF64_ALWAYS_INLINE inline
 #define SF64_NOINLINE
@@ -83,8 +89,16 @@
 // GCC builds don't feed the Metal pipeline.
 #if defined(__clang__)
 #define SF64_NO_OPT __attribute__((optnone))
+#define SF64_BITCAST_BOUNDARY SF64_ALWAYS_INLINE
+#elif defined(__GNUC__)
+#define SF64_NO_OPT __attribute__((optimize("O0")))
+#define SF64_BITCAST_BOUNDARY SF64_ALWAYS_INLINE
+#elif defined(_MSC_VER)
+#define SF64_NO_OPT
+#define SF64_BITCAST_BOUNDARY __declspec(noinline) inline
 #else
 #define SF64_NO_OPT
+#define SF64_BITCAST_BOUNDARY inline
 #endif
 
 // Entry points consumed by AdaptiveCpp's MSL emitter are `extern "C"` with a
@@ -92,5 +106,9 @@
 // this to the emitter's expected attribute (e.g. HIPSYCL_SSCP_BUILTIN) in
 // their own build; stand-alone builds fall back to `extern "C"` + always-inline.
 #ifndef SF64_ABI
+#ifdef __cplusplus
 #define SF64_ABI extern "C" SF64_ALWAYS_INLINE
+#else
+#define SF64_ABI static inline
+#endif
 #endif

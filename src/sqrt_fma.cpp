@@ -11,7 +11,7 @@
 //   Raphson refinement, no reliance on soft-fp64 add/mul at runtime — sqrt
 //   is self-contained on top of the bit helpers.
 //
-// * fma — exact 53×53 → 106-bit product through __uint128_t, align and
+// * fma — exact 53×53 → 106-bit product through portable two-limb U128, align and
 //   add/subtract the 53-bit `c` mantissa, then normalise + round to 53
 //   bits. Again no host-FPU arithmetic and no runtime dependency on the
 //   arithmetic TU.
@@ -71,8 +71,8 @@ SF64_ALWAYS_INLINE IntSqrtResult isqrt_bits(uint64_t radicand_hi, uint64_t radic
     //
     // We represent `rem` in up to 128 bits because at each step it can grow
     // to ~ (2*root+1) <= 2*(2^num_result_bits).
-    __uint128_t rem = 0;
-    __uint128_t root = 0;
+    U128 rem{0};
+    U128 root{0};
     // The radicand is (radicand_hi, radicand_lo); we consume from the top
     // two bits each iteration. Number of radicand bit-pairs we traverse is
     // `num_result_bits`. The top pair must align to bit positions
@@ -81,7 +81,7 @@ SF64_ALWAYS_INLINE IntSqrtResult isqrt_bits(uint64_t radicand_hi, uint64_t radic
     // Build a 128-bit view. We shift it left so the topmost meaningful pair
     // ends up at bits (127, 126), then consume with (rad >> 126) & 3 each
     // iteration and shift rad left by 2.
-    __uint128_t rad = ((__uint128_t)radicand_hi << 64) | (__uint128_t)radicand_lo;
+    U128 rad{radicand_hi, radicand_lo};
     const int total_radicand_bits = num_result_bits * 2;
     // If total_radicand_bits < 128, shift rad left to align its MSB pair to
     // bit 127..126. If total_radicand_bits == 128 no shift needed.
@@ -91,10 +91,10 @@ SF64_ALWAYS_INLINE IntSqrtResult isqrt_bits(uint64_t radicand_hi, uint64_t radic
 
     for (int i = 0; i < num_result_bits; ++i) {
         // Pull the next two bits off the top of rad.
-        const __uint128_t next_pair = (rad >> 126) & 0x3U;
+        const U128 next_pair = (rad >> 126) & U128{0x3U};
         rad = rad << 2;
         rem = (rem << 2) | next_pair;
-        const __uint128_t test = (root << 2) | 0x1U;
+        const U128 test = (root << 2) | U128{0x1U};
         if (rem >= test) {
             rem = rem - test;
             root = (root << 1) | 0x1U;
@@ -357,24 +357,15 @@ namespace {
 
 // Position of the highest set bit in a 128-bit value (0-indexed). Returns
 // -1 for zero.
-SF64_ALWAYS_INLINE int highest_bit_u128(__uint128_t v) noexcept {
-    if (v == 0)
-        return -1;
-    const uint64_t hi = static_cast<uint64_t>(v >> 64);
-    if (hi != 0) {
-        // SAFETY: __builtin_clzll is UB on zero — guarded above.
-        return 127 - __builtin_clzll(hi);
-    }
-    const uint64_t lo = static_cast<uint64_t>(v);
-    // SAFETY: lo != 0 here since v != 0 and hi == 0.
-    return 63 - __builtin_clzll(lo);
+SF64_ALWAYS_INLINE int highest_bit_u128(U128 v) noexcept {
+    return highest_bit(v);
 }
 
 // Mode-parametrized round-and-pack for a (mag, frame_exp) representation.
 // Value = mag * 2^frame_exp. Handles normals, subnormals, and overflow in a
 // single rounding step (no double rounding). `fe` accumulates INEXACT /
 // OVERFLOW / UNDERFLOW; the caller flushes once to TLS at end-of-op.
-SF64_ALWAYS_INLINE double round_and_pack(uint32_t sign, __uint128_t mag, int64_t frame_exp,
+SF64_ALWAYS_INLINE double round_and_pack(uint32_t sign, U128 mag, int64_t frame_exp,
                                          sf64_rounding_mode mode,
                                          sf64_internal_fe_acc& fe) noexcept {
     if (mag == 0) {
@@ -466,17 +457,17 @@ SF64_ALWAYS_INLINE double round_and_pack(uint32_t sign, __uint128_t mag, int64_t
         return make_signed_zero(sign);
     } else {
         // Need to round. target_lsb in [1, 127].
-        const __uint128_t round_bit_val = ((__uint128_t)1) << (target_lsb - 1);
+        const U128 round_bit_val = U128{1} << (target_lsb - 1);
         const bool round_bit = (mag & round_bit_val) != 0;
         bool sticky;
         if (target_lsb >= 2) {
-            const __uint128_t sticky_mask = round_bit_val - 1;
+            const U128 sticky_mask = round_bit_val - U128{1};
             sticky = (mag & sticky_mask) != 0;
         } else {
             sticky = false;
         }
         round_inexact = round_bit || sticky;
-        const __uint128_t trunc = mag >> target_lsb;
+        const U128 trunc = mag >> target_lsb;
         rounded_mant = static_cast<uint64_t>(trunc);
         const bool lsb = (rounded_mant & 1u) != 0;
         if (sf64_internal_should_round_up(sign, round_bit, sticky, lsb, mode)) {
@@ -642,13 +633,10 @@ SF64_ALWAYS_INLINE double fma_r_impl(double a, double b, double c, sf64_rounding
     // 106-bit result with MSB at bit 104 or 105.
     //
     // Routed through the `mul64x64_to_128` primitive in internal.h so the
-    // portable schoolbook fallback (used when __uint128_t is unavailable —
-    // MSVC, some wasm32 toolchains, 32-bit MCUs — or when
-    // SF64_FORCE_PORTABLE_U128 is set for the CI cell that exercises it)
-    // computes the same 128-bit product as the native __uint128_t path.
+    // portable schoolbook multiplication; no compiler-native 128-bit
+    // integer extension is required.
     const U128Pair prod_pair = mul64x64_to_128(ma, mb);
-    const __uint128_t prod =
-        (static_cast<__uint128_t>(prod_pair.hi) << 64) | static_cast<__uint128_t>(prod_pair.lo);
+    const U128 prod{prod_pair.hi, prod_pair.lo};
     // `prod` has MSB at bit 104 or 105 depending on whether (ma*mb)'s high
     // bit carried. Compute its true exponent.
     // Exponent of the integer product: expa + expb - 104 (if MSB at 104)
@@ -699,7 +687,7 @@ SF64_ALWAYS_INLINE double fma_r_impl(double a, double b, double c, sf64_rounding
     // Place prod into frame. prod's integer value * 2^prod_exp = value, so
     // frame_int(prod_value) = prod * 2^(prod_exp - E). Shift amount:
     const int64_t prod_shift = prod_exp - E;
-    __uint128_t prod_frame;
+    U128 prod_frame;
     if (prod_shift >= 0) {
         // left shift — guaranteed safe since frame_top was chosen with 2
         // bits of headroom above prod_true_msb, so prod's MSB lands at bit
@@ -708,39 +696,39 @@ SF64_ALWAYS_INLINE double fma_r_impl(double a, double b, double c, sf64_rounding
     } else {
         const int rshift = static_cast<int>(-prod_shift);
         if (rshift >= 128) {
-            prod_frame = (prod != 0) ? (__uint128_t)1U : (__uint128_t)0U;
+            prod_frame = (prod != 0) ? U128{1U} : U128{0U};
         } else {
-            const __uint128_t mask = (((__uint128_t)1) << rshift) - 1;
+            const U128 mask = (U128{1} << rshift) - U128{1};
             const bool lost = (prod & mask) != 0;
             prod_frame = prod >> rshift;
             if (lost)
-                prod_frame |= (__uint128_t)1U;
+                prod_frame |= U128{1U};
         }
     }
 
     // Place c into frame. c's integer value (mc) * 2^(expc - 52) = value.
     // frame_int(c_value) = mc * 2^(expc - 52 - E).
     const int64_t c_shift = (expc - 52) - E;
-    __uint128_t c_frame;
+    U128 c_frame;
     if (c_shift >= 0) {
         // left shift — safe because frame_top >= c_true_msb + 2 = expc + 2,
         // so E <= expc - 125, so c_shift = (expc - 52) - E <= 73 < 128,
         // and mc (53 bits) << 73 = MSB at bit 125. Fine.
-        c_frame = ((__uint128_t)mc) << c_shift;
+        c_frame = U128{mc} << c_shift;
     } else {
         const int rshift = static_cast<int>(-c_shift);
         if (rshift >= 128) {
-            c_frame = (mc != 0) ? (__uint128_t)1U : (__uint128_t)0U;
+            c_frame = (mc != 0) ? U128{1U} : U128{0U};
         } else {
-            const __uint128_t mask = (((__uint128_t)1) << rshift) - 1;
-            const bool lost = ((__uint128_t)mc & mask) != 0;
-            c_frame = ((__uint128_t)mc) >> rshift;
+            const U128 mask = (U128{1} << rshift) - U128{1};
+            const bool lost = (U128{mc} & mask) != 0;
+            c_frame = U128{mc} >> rshift;
             if (lost)
-                c_frame |= (__uint128_t)1U;
+                c_frame |= U128{1U};
         }
     }
 
-    __uint128_t mag;
+    U128 mag;
     uint32_t result_sign;
     if (sign_ab == sc) {
         mag = prod_frame + c_frame; // fits in 128 bits; headroom bit ensures no overflow
@@ -800,8 +788,6 @@ extern "C" double sf64_fma_r(sf64_rounding_mode mode, double a, double b, double
 // src/internal_fenv.h for the accumulator semantics.
 // ---------------------------------------------------------------------------
 
-#if SOFT_FP64_FENV_MODE == 1 || SOFT_FP64_FENV_MODE == 2
-
 extern "C" double sf64_sqrt_ex(double x, sf64_fe_state_t* state) {
     sf64_internal_fe_acc fe{state};
     const double r = sf64_internal_sqrt_rne(x, fe);
@@ -830,5 +816,3 @@ extern "C" double sf64_fma_r_ex(sf64_rounding_mode mode, double a, double b, dou
     fe.flush();
     return r;
 }
-
-#endif // SOFT_FP64_FENV_MODE == 1 || SOFT_FP64_FENV_MODE == 2

@@ -27,7 +27,7 @@
 //
 // Inverse trig (asin/acos/atan/atan2) lives in sleef_inv_hyp_pow.cpp.
 // The π-scaled inverse variants (asinpi/acospi/atanpi/atan2pi) are
-// currently stubs and live in sleef_stubs.cpp.
+// are fully implemented in sleef_special.cpp.
 //
 // SPDX-License-Identifier: BSL-1.0 AND MIT
 //
@@ -1458,8 +1458,8 @@ SF64_SLEEF_INLINE RempiSub rempisub(double x, soft_fp64::sleef::sf64_internal_fe
     const double absx = sf64_fabs(x);
     constexpr double kTwo52 = 4503599627370496.0;
     const double c = mulsign_(kTwo52, x);
-    const double rint4x = (absfx > kTwo52) ? fourx : orsign_(sf64_sub(sf64_fma(4.0, x, c), c), x);
-    const double rintx = (absx > kTwo52) ? x : orsign_(sf64_sub(sf64_add(x, c), c), x);
+    const double rint4x = gt_(absfx, kTwo52) ? fourx : orsign_(sf64_sub(sf64_fma(4.0, x, c), c), x);
+    const double rintx = gt_(absx, kTwo52) ? x : orsign_(sf64_sub(sf64_add(x, c), c), x);
     ret.d = sf64_fma(-0.25, rint4x, x);
     const double ii = sf64_fma(-4.0, rintx, rint4x);
     ret.i = sf64_to_i32(ii);
@@ -1612,7 +1612,7 @@ SF64_SLEEF_INLINE DD cospi_core(double d, soft_fp64::sleef::sf64_internal_fe_acc
 } // namespace
 
 // Cross-TU export of the SLEEF 3.6 `sinpik` core. Used by the gammak
-// reflection branch (x < 0.5) in sleef_stubs.cpp::sf64_tgamma /
+// reflection branch (x < 0.5) in sleef_special.cpp::sf64_tgamma /
 // sf64_lgamma. Hidden visibility — not part of the public ABI.
 namespace soft_fp64::sleef {
 [[gnu::visibility("hidden")]] SF64_SLEEF_NOINLINE DD

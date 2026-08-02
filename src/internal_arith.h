@@ -67,7 +67,7 @@ SF64_ALWAYS_INLINE UnpackedArith arith_unpack_finite_nonzero(uint64_t bits) noex
     const uint64_t frac = extract_frac(bits);
     if (raw_exp == 0) {
         // Subnormal. Caller guarantees frac != 0, so clz is defined.
-        const int lz = __builtin_clzll(frac);
+        const int lz = clz64(frac);
         const int shift = lz - 11;
         u.sig = (frac << shift) << 9;
         u.exp = 1 - shift;
@@ -217,7 +217,7 @@ SF64_ALWAYS_INLINE double arith_sub_magnitudes_rne(uint32_t a_sign, uint64_t a_b
         return make_signed_zero(0u);
     }
 
-    const int lz = __builtin_clzll(diff);
+    const int lz = clz64(diff);
     const int norm_shift = lz - 2;
     diff <<= norm_shift;
     exp -= norm_shift;
@@ -238,13 +238,13 @@ SF64_ALWAYS_INLINE double arith_mul_core_rne(uint64_t ab, uint64_t bb, uint32_t 
         exp_b = ub.exp;
     }
 
-    const __uint128_t product = static_cast<__uint128_t>(sig_a) * static_cast<__uint128_t>(sig_b);
+    const U128 product = U128{sig_a} * U128{sig_b};
     int32_t exp_r = exp_a + exp_b - kExpBias;
 
     uint64_t sig;
     if ((product >> 105) & 1u) {
         const int shift = 44;
-        const __uint128_t lost_mask = ((static_cast<__uint128_t>(1) << shift) - 1);
+        const U128 lost_mask = (U128{1} << shift) - U128{1};
         const bool sticky = (product & lost_mask) != 0;
         sig = static_cast<uint64_t>(product >> shift);
         if (sticky)
@@ -252,7 +252,7 @@ SF64_ALWAYS_INLINE double arith_mul_core_rne(uint64_t ab, uint64_t bb, uint32_t 
         ++exp_r;
     } else {
         const int shift = 43;
-        const __uint128_t lost_mask = ((static_cast<__uint128_t>(1) << shift) - 1);
+        const U128 lost_mask = (U128{1} << shift) - U128{1};
         const bool sticky = (product & lost_mask) != 0;
         sig = static_cast<uint64_t>(product >> shift);
         if (sticky)
@@ -276,10 +276,9 @@ SF64_ALWAYS_INLINE double arith_div_core_rne(uint64_t ab, uint64_t bb, uint32_t 
         --exp_r;
     }
 
-    const __uint128_t num = static_cast<__uint128_t>(sig_a) << 55;
-    const __uint128_t den = static_cast<__uint128_t>(sig_b);
-    const uint64_t quotient = static_cast<uint64_t>(num / den);
-    const __uint128_t remainder = num % den;
+    const U128 num = U128{sig_a} << 55;
+    uint64_t remainder;
+    const uint64_t quotient = divmod_u128_u64(num, sig_b, remainder);
 
     uint64_t sig = quotient << 6;
     if (remainder != 0) {
@@ -469,19 +468,19 @@ struct IsqrtResultInternal {
 
 SF64_ALWAYS_INLINE IsqrtResultInternal arith_isqrt_bits(uint64_t radicand_hi, uint64_t radicand_lo,
                                                         int num_result_bits) noexcept {
-    __uint128_t rem = 0;
-    __uint128_t root = 0;
-    __uint128_t rad = ((__uint128_t)radicand_hi << 64) | (__uint128_t)radicand_lo;
+    U128 rem{0};
+    U128 root{0};
+    U128 rad{radicand_hi, radicand_lo};
     const int total_radicand_bits = num_result_bits * 2;
     if (total_radicand_bits < 128) {
         rad = rad << (128 - total_radicand_bits);
     }
 
     for (int i = 0; i < num_result_bits; ++i) {
-        const __uint128_t next_pair = (rad >> 126) & 0x3U;
+        const U128 next_pair = (rad >> 126) & U128{0x3U};
         rad = rad << 2;
         rem = (rem << 2) | next_pair;
-        const __uint128_t test = (root << 2) | 0x1U;
+        const U128 test = (root << 2) | U128{0x1U};
         if (rem >= test) {
             rem = rem - test;
             root = (root << 1) | 0x1U;
@@ -597,21 +596,13 @@ SF64_ALWAYS_INLINE double sf64_internal_sqrt_rne(double x, sf64_internal_fe_acc&
 // fma (RNE-only specialization)
 // ===========================================================================
 
-SF64_ALWAYS_INLINE int arith_highest_bit_u128(__uint128_t v) noexcept {
-    if (v == 0)
-        return -1;
-    const uint64_t hi = static_cast<uint64_t>(v >> 64);
-    if (hi != 0) {
-        return 127 - __builtin_clzll(hi);
-    }
-    const uint64_t lo = static_cast<uint64_t>(v);
-    return 63 - __builtin_clzll(lo);
+SF64_ALWAYS_INLINE int arith_highest_bit_u128(U128 v) noexcept {
+    return highest_bit(v);
 }
 
 // RNE round-and-pack on a (mag, frame_exp) representation.
 // Value = mag * 2^frame_exp.
-SF64_ALWAYS_INLINE double arith_fma_round_and_pack_rne(uint32_t sign, __uint128_t mag,
-                                                       int64_t frame_exp,
+SF64_ALWAYS_INLINE double arith_fma_round_and_pack_rne(uint32_t sign, U128 mag, int64_t frame_exp,
                                                        sf64_internal_fe_acc& fe) noexcept {
     if (mag == 0) {
         return make_signed_zero(sign);
@@ -649,17 +640,17 @@ SF64_ALWAYS_INLINE double arith_fma_round_and_pack_rne(uint32_t sign, __uint128_
         }
         return make_signed_zero(sign);
     } else {
-        const __uint128_t round_bit_val = ((__uint128_t)1) << (target_lsb - 1);
+        const U128 round_bit_val = U128{1} << (target_lsb - 1);
         const bool round_bit = (mag & round_bit_val) != 0;
         bool sticky;
         if (target_lsb >= 2) {
-            const __uint128_t sticky_mask = round_bit_val - 1;
+            const U128 sticky_mask = round_bit_val - U128{1};
             sticky = (mag & sticky_mask) != 0;
         } else {
             sticky = false;
         }
         round_inexact = round_bit || sticky;
-        const __uint128_t trunc = mag >> target_lsb;
+        const U128 trunc = mag >> target_lsb;
         rounded_mant = static_cast<uint64_t>(trunc);
         const bool lsb = (rounded_mant & 1u) != 0;
         // RNE: round up iff round_bit && (sticky || lsb).
@@ -785,8 +776,7 @@ SF64_ALWAYS_INLINE double sf64_internal_fma_rne(double a, double b, double c,
     // src/sqrt_fma.cpp's fma_r_impl for the gating rationale; both paths
     // produce the identical 128-bit product by construction.
     const U128Pair prod_pair = mul64x64_to_128(ma, mb);
-    const __uint128_t prod =
-        (static_cast<__uint128_t>(prod_pair.hi) << 64) | static_cast<__uint128_t>(prod_pair.lo);
+    const U128 prod{prod_pair.hi, prod_pair.lo};
     int64_t prod_exp = expa + expb - 104;
 
     if (is_zero_bits(bc)) {
@@ -804,40 +794,40 @@ SF64_ALWAYS_INLINE double sf64_internal_fma_rne(double a, double b, double c,
     const int64_t E = frame_top - 127;
 
     const int64_t prod_shift = prod_exp - E;
-    __uint128_t prod_frame;
+    U128 prod_frame;
     if (prod_shift >= 0) {
         prod_frame = prod << prod_shift;
     } else {
         const int rshift = static_cast<int>(-prod_shift);
         if (rshift >= 128) {
-            prod_frame = (prod != 0) ? (__uint128_t)1U : (__uint128_t)0U;
+            prod_frame = (prod != 0) ? U128{1U} : U128{0U};
         } else {
-            const __uint128_t mask = (((__uint128_t)1) << rshift) - 1;
+            const U128 mask = (U128{1} << rshift) - U128{1};
             const bool lost = (prod & mask) != 0;
             prod_frame = prod >> rshift;
             if (lost)
-                prod_frame |= (__uint128_t)1U;
+                prod_frame |= U128{1U};
         }
     }
 
     const int64_t c_shift = (expc - 52) - E;
-    __uint128_t c_frame;
+    U128 c_frame;
     if (c_shift >= 0) {
-        c_frame = ((__uint128_t)mc) << c_shift;
+        c_frame = U128{mc} << c_shift;
     } else {
         const int rshift = static_cast<int>(-c_shift);
         if (rshift >= 128) {
-            c_frame = (mc != 0) ? (__uint128_t)1U : (__uint128_t)0U;
+            c_frame = (mc != 0) ? U128{1U} : U128{0U};
         } else {
-            const __uint128_t mask = (((__uint128_t)1) << rshift) - 1;
-            const bool lost = ((__uint128_t)mc & mask) != 0;
-            c_frame = ((__uint128_t)mc) >> rshift;
+            const U128 mask = (U128{1} << rshift) - U128{1};
+            const bool lost = (U128{mc} & mask) != 0;
+            c_frame = U128{mc} >> rshift;
             if (lost)
-                c_frame |= (__uint128_t)1U;
+                c_frame |= U128{1U};
         }
     }
 
-    __uint128_t mag;
+    U128 mag;
     uint32_t result_sign;
     if (sign_ab == sc) {
         mag = prod_frame + c_frame;

@@ -20,6 +20,7 @@
 #include "soft_fp64/rounding_mode.h"
 
 #include <cstdint>
+#include <cstring>
 
 namespace soft_fp64::internal {
 
@@ -41,20 +42,35 @@ inline constexpr int kMantissaW = kFracBits + 1; // 53 with implicit
 
 // ---- bit-casts ----------------------------------------------------------
 
-SF64_ALWAYS_INLINE uint64_t bits_of(double x) noexcept {
-    return __builtin_bit_cast(uint64_t, x);
+// The volatile handoff on floating inputs prevents optimizer pattern matching from
+// turning integer masks back into fcmp/fabs/copysign/fneg instructions. It
+// remains inline so the boundary is only a compiler barrier, not an O0 call.
+// Output conversion needs no barrier once its integer provenance is opaque.
+// These are the only permitted operations on the host floating representation.
+SF64_BITCAST_BOUNDARY uint64_t bits_of(double x) noexcept {
+    uint64_t out;
+    std::memcpy(&out, &x, sizeof(out));
+    volatile uint64_t barrier = out;
+    return barrier;
 }
 
-SF64_ALWAYS_INLINE double from_bits(uint64_t b) noexcept {
-    return __builtin_bit_cast(double, b);
+SF64_BITCAST_BOUNDARY double from_bits(uint64_t b) noexcept {
+    double out;
+    std::memcpy(&out, &b, sizeof(out));
+    return out;
 }
 
-SF64_ALWAYS_INLINE uint32_t bits_of(float x) noexcept {
-    return __builtin_bit_cast(uint32_t, x);
+SF64_BITCAST_BOUNDARY uint32_t bits_of(float x) noexcept {
+    uint32_t out;
+    std::memcpy(&out, &x, sizeof(out));
+    volatile uint32_t barrier = out;
+    return barrier;
 }
 
-SF64_ALWAYS_INLINE float f32_from_bits(uint32_t b) noexcept {
-    return __builtin_bit_cast(float, b);
+SF64_BITCAST_BOUNDARY float f32_from_bits(uint32_t b) noexcept {
+    float out;
+    std::memcpy(&out, &b, sizeof(out));
+    return out;
 }
 
 // ---- field extraction ---------------------------------------------------
@@ -131,12 +147,58 @@ SF64_ALWAYS_INLINE uint64_t shift_left(uint64_t x, int count) noexcept {
 
 // Count leading zeros on a 64-bit value. Returns 64 for x=0.
 SF64_ALWAYS_INLINE int clz64(uint64_t x) noexcept {
-    return x == 0 ? 64 : __builtin_clzll(x);
+    if (x == 0)
+        return 64;
+    int count = 0;
+    if ((x >> 32) == 0) {
+        count += 32;
+        x <<= 32;
+    }
+    if ((x >> 48) == 0) {
+        count += 16;
+        x <<= 16;
+    }
+    if ((x >> 56) == 0) {
+        count += 8;
+        x <<= 8;
+    }
+    if ((x >> 60) == 0) {
+        count += 4;
+        x <<= 4;
+    }
+    if ((x >> 62) == 0) {
+        count += 2;
+        x <<= 2;
+    }
+    if ((x >> 63) == 0)
+        ++count;
+    return count;
 }
 
 // Count leading zeros on a 32-bit value. Returns 32 for x=0.
 SF64_ALWAYS_INLINE int clz32(uint32_t x) noexcept {
-    return x == 0 ? 32 : __builtin_clz(x);
+    if (x == 0)
+        return 32;
+    int count = 0;
+    if ((x >> 16) == 0) {
+        count += 16;
+        x <<= 16;
+    }
+    if ((x >> 24) == 0) {
+        count += 8;
+        x <<= 8;
+    }
+    if ((x >> 28) == 0) {
+        count += 4;
+        x <<= 4;
+    }
+    if ((x >> 30) == 0) {
+        count += 2;
+        x <<= 2;
+    }
+    if ((x >> 31) == 0)
+        ++count;
+    return count;
 }
 
 // ---- 64x64 -> 128 unsigned multiply -------------------------------------
@@ -144,40 +206,13 @@ SF64_ALWAYS_INLINE int clz32(uint32_t x) noexcept {
 // Returned as the (hi, lo) halves of the 128-bit product. Used by `sf64_fma`
 // to form the exact 53x53 -> 106-bit product before alignment.
 //
-// Two implementations:
-//   - `__uint128_t` native multiply (default; fast path on every toolchain
-//     that defines `__SIZEOF_INT128__` — gcc, clang, AppleClang).
-//   - portable schoolbook of four 32x32 -> 64 partial products, carry-
-//     propagated to the high/low 64-bit halves. Mirrors Berkeley SoftFloat
-//     `s_mul64To128.c` (BSD-3-Clause) line for line.
-//
-// Selection gate:
-//   - `SF64_FORCE_PORTABLE_U128` (CMake/define) forces the portable path
-//     even when `__uint128_t` is available — used by the dedicated CI cell
-//     so the schoolbook code stays linked, exercised, and bit-for-bit
-//     identical to the native path.
-//   - Otherwise, `__SIZEOF_INT128__` selects native; absence selects
-//     portable (MSVC, some wasm32 toolchains, 32-bit MCU SDKs).
-//
-// Bit-exactness: the two paths compute the identical 128-bit product by
-// construction. The CI cell that defines `SF64_FORCE_PORTABLE_U128`
-// re-runs the full ctest tree — TestFloat fma vectors and the MPFR
-// transcendental sweeps both transit `sf64_fma`, so any divergence between
-// the paths surfaces at vector granularity.
+// Implemented with four 32x32 -> 64 partial products and explicit carry
+// propagation. No compiler-native 128-bit integer extension is required.
 struct U128Pair {
     uint64_t hi;
     uint64_t lo;
 };
 
-#if defined(__SIZEOF_INT128__) && !defined(SF64_FORCE_PORTABLE_U128)
-SF64_ALWAYS_INLINE U128Pair mul64x64_to_128(uint64_t a, uint64_t b) noexcept {
-    const __uint128_t p = static_cast<__uint128_t>(a) * static_cast<__uint128_t>(b);
-    U128Pair r;
-    r.hi = static_cast<uint64_t>(p >> 64);
-    r.lo = static_cast<uint64_t>(p);
-    return r;
-}
-#else
 // Portable schoolbook 64x64 -> 128. Splits each operand into 32-bit halves
 // and accumulates four 64-bit partial products, propagating carries through
 // the middle column. Reference: Berkeley SoftFloat 3e `s_mul64To128.c`.
@@ -215,7 +250,123 @@ SF64_ALWAYS_INLINE U128Pair mul64x64_to_128(uint64_t a, uint64_t b) noexcept {
     r.lo = lo;
     return r;
 }
-#endif
+
+// Minimal unsigned 128-bit integer used by the binary64 core. All operations
+// are expressed in two uint64_t limbs so this type works on MSVC, wasm32 and
+// device compilers that do not expose __int128.
+struct U128 {
+    uint64_t hi = 0;
+    uint64_t lo = 0;
+
+    constexpr U128() noexcept = default;
+    constexpr U128(uint64_t value) noexcept : lo(value) {}
+    constexpr U128(uint64_t high, uint64_t low) noexcept : hi(high), lo(low) {}
+    constexpr explicit operator uint64_t() const noexcept { return lo; }
+    constexpr explicit operator bool() const noexcept { return hi != 0 || lo != 0; }
+};
+
+SF64_ALWAYS_INLINE bool operator==(U128 a, U128 b) noexcept {
+    return a.hi == b.hi && a.lo == b.lo;
+}
+SF64_ALWAYS_INLINE bool operator!=(U128 a, U128 b) noexcept {
+    return !(a == b);
+}
+SF64_ALWAYS_INLINE bool operator<(U128 a, U128 b) noexcept {
+    return a.hi < b.hi || (a.hi == b.hi && a.lo < b.lo);
+}
+SF64_ALWAYS_INLINE bool operator>=(U128 a, U128 b) noexcept {
+    return !(a < b);
+}
+SF64_ALWAYS_INLINE U128 operator|(U128 a, U128 b) noexcept {
+    return U128{a.hi | b.hi, a.lo | b.lo};
+}
+SF64_ALWAYS_INLINE U128 operator&(U128 a, U128 b) noexcept {
+    return U128{a.hi & b.hi, a.lo & b.lo};
+}
+SF64_ALWAYS_INLINE U128& operator|=(U128& a, U128 b) noexcept {
+    a.hi |= b.hi;
+    a.lo |= b.lo;
+    return a;
+}
+SF64_ALWAYS_INLINE U128 operator+(U128 a, U128 b) noexcept {
+    const uint64_t lo = a.lo + b.lo;
+    return U128{a.hi + b.hi + static_cast<uint64_t>(lo < a.lo), lo};
+}
+SF64_ALWAYS_INLINE U128 operator-(U128 a, U128 b) noexcept {
+    const uint64_t borrow = static_cast<uint64_t>(a.lo < b.lo);
+    return U128{a.hi - b.hi - borrow, a.lo - b.lo};
+}
+SF64_ALWAYS_INLINE U128 operator<<(U128 a, int shift) noexcept {
+    if (shift <= 0)
+        return a;
+    if (shift >= 128)
+        return U128{};
+    if (shift >= 64)
+        return U128{a.lo << (shift - 64), 0};
+    return U128{(a.hi << shift) | (a.lo >> (64 - shift)), a.lo << shift};
+}
+SF64_ALWAYS_INLINE U128 operator>>(U128 a, int shift) noexcept {
+    if (shift <= 0)
+        return a;
+    if (shift >= 128)
+        return U128{};
+    if (shift >= 64)
+        return U128{0, a.hi >> (shift - 64)};
+    return U128{a.hi >> shift, (a.lo >> shift) | (a.hi << (64 - shift))};
+}
+SF64_ALWAYS_INLINE U128 operator*(U128 a, U128 b) noexcept {
+    const U128Pair low_product = mul64x64_to_128(a.lo, b.lo);
+    return U128{low_product.hi + a.hi * b.lo + a.lo * b.hi, low_product.lo};
+}
+SF64_ALWAYS_INLINE int highest_bit(U128 value) noexcept {
+    if (value.hi != 0)
+        return 127 - clz64(value.hi);
+    return value.lo != 0 ? 63 - clz64(value.lo) : -1;
+}
+
+// Divide a 128-bit numerator by a 64-bit denominator using Knuth's normalized
+// base-2^32 two-digit algorithm (Hacker's Delight, `divlu`). The binary64
+// caller guarantees numerator.hi < denominator, denominator >= 2^32, and a
+// 64-bit quotient. This avoids both compiler-native 128-bit integers and the
+// 128 iterations of restoring bit division.
+SF64_ALWAYS_INLINE uint64_t divmod_u128_u64(U128 numerator, uint64_t denominator,
+                                            uint64_t& remainder) noexcept {
+    constexpr uint64_t base = uint64_t{1} << 32;
+    constexpr uint64_t mask = base - 1;
+    const unsigned shift = static_cast<unsigned>(clz64(denominator));
+    const uint64_t normalized_denominator = denominator << shift;
+    const uint64_t denominator_hi = normalized_denominator >> 32;
+    const uint64_t denominator_lo = normalized_denominator & mask;
+    const uint64_t numerator_hi = (numerator.hi << shift) | (numerator.lo >> (64 - shift));
+    const uint64_t numerator_lo = numerator.lo << shift;
+    const uint64_t numerator_digit1 = numerator_lo >> 32;
+    const uint64_t numerator_digit0 = numerator_lo & mask;
+
+    uint64_t quotient_hi = numerator_hi / denominator_hi;
+    uint64_t remainder_hat = numerator_hi - quotient_hi * denominator_hi;
+    while (quotient_hi >= base ||
+           quotient_hi * denominator_lo > base * remainder_hat + numerator_digit1) {
+        --quotient_hi;
+        remainder_hat += denominator_hi;
+        if (remainder_hat >= base)
+            break;
+    }
+
+    const uint64_t middle =
+        numerator_hi * base + numerator_digit1 - quotient_hi * normalized_denominator;
+    uint64_t quotient_lo = middle / denominator_hi;
+    remainder_hat = middle - quotient_lo * denominator_hi;
+    while (quotient_lo >= base ||
+           quotient_lo * denominator_lo > base * remainder_hat + numerator_digit0) {
+        --quotient_lo;
+        remainder_hat += denominator_hi;
+        if (remainder_hat >= base)
+            break;
+    }
+
+    remainder = (middle * base + numerator_digit0 - quotient_lo * normalized_denominator) >> shift;
+    return quotient_hi * base + quotient_lo;
+}
 
 // ---- canonical result builders ------------------------------------------
 

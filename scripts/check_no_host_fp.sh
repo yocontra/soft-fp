@@ -24,7 +24,8 @@
 #
 # Definition of "FPU dependency" here: the library's ABI is `double`, and
 # passing/returning a `double` between `sf64_*` calls is NOT an FPU use —
-# the bits are manipulated only via __builtin_bit_cast. What IS an FPU
+# the bits cross that ABI only through the audited memcpy/volatile bit-carrier
+# boundary. What IS an FPU
 # use is any of the patterns above: they lower to hardware fp64 ops on
 # the host and break bit-exactness on targets without native fp64.
 #
@@ -115,20 +116,49 @@ scan "fp-contract-escape" \
 scan "fp-lit-compare" \
     '[a-zA-Z_)][[:space:]]*(<|>|<=|>=|==|!=)[[:space:]]*(-?[0-9]+\.[0-9]+([eE][-+]?[0-9]+)?|-?[0-9]+[eE][-+]?[0-9]+)\b'
 
-# 8. Raw comparisons involving a double-typed expression where neither
-#    operand is an FP literal. Catches the pattern that slipped through
-#    rule 7 during the original carve-out sweep — e.g.
-#    `if (x.hi < y.hi)`, `if (sf64_fabs(x) < sf64_fabs(y))`. The hooks:
-#      - `.hi` / `.lo` / `.dd` — DD struct fields are doubles by definition
-#      - `sf64_fabs(…)` / `sf64_neg(…)` / `dd_to_d(…)` — return double
-#      - `from_bits(…)` — reinterprets uint64_t bits as double
-#    If any of these appears immediately followed by a relational operator,
-#    the line is doing a host-FPU comparison and must use the
-#    `sleef::lt_/le_/gt_/ge_/eq_/ne_` helpers instead.
-#    Heuristic note: integer-typed structs that happen to have `.hi` /
-#    `.lo` fields would false-positive here, but the codebase has none.
+# 8. Raw comparisons involving expressions known to return double. Do not
+#    guess from member names: U128 and sf128_t intentionally have integer
+#    `.hi`/`.lo` members, which made the old heuristic both noisy and unsafe.
 scan "fp-var-compare" \
-    '(\.(hi|lo|dd)|sf64_fabs\([^()]*\)|sf64_neg\([^()]*\)|dd_to_d\([^()]*\)|from_bits\([^()]*\))[[:space:]]*(<=|>=|==|!=|<[^<=]|>[^>=])'
+    '(sf64_fabs\([^()]*\)|sf64_neg\([^()]*\)|dd_to_d\([^()]*\)|from_bits\([^()]*\))[[:space:]]*(<=|>=|==|!=|<[^<=]|>[^>=])'
+
+# 9. Compile every C++ production TU to optimized LLVM IR and reject actual
+#    floating arithmetic/comparison/conversion opcodes. This catches compiler
+#    pattern matching (for example, integer sign masks reconstructed as
+#    llvm.copysign.f64), which source regexes fundamentally cannot see.
+if command -v "${CXX:-clang++}" >/dev/null 2>&1 && "${CXX:-clang++}" --version | grep -qi clang; then
+    ir_tmp=$(mktemp -d)
+    trap 'rm -rf "$ir_tmp"' EXIT
+    cmake -S . -B "$ir_tmp/build" -DSOFT_FP64_BUILD_TESTS=OFF \
+        -DSOFT_FP64_INSTALL=OFF -DSOFT_FP64_OCL=on >/dev/null
+    ir_pattern='(^|[^A-Za-z0-9_])(fadd|fsub|fmul|fdiv|frem|fcmp|sitofp|uitofp|fptosi|fptoui)([^A-Za-z0-9_]|$)|llvm\.[A-Za-z0-9_.]+\.f(32|64)'
+    for f in "${files[@]}"; do
+        case "$f" in *.cpp) ;; *) continue ;; esac
+        out="$ir_tmp/$(printf '%s' "$f" | tr '/' '_').ll"
+        extra=()
+        if [[ "$f" == src/fp128/* ]]; then
+            extra+=(
+                -Itests/testfloat/vendor/berkeley-softfloat-3/source/include
+                -Itests/testfloat/vendor/berkeley-softfloat-3/source/8086-SSE
+                -Isrc/fp128 -DSOFTFLOAT_FAST_INT64 -DSOFTFLOAT_ROUND_ODD
+                -DTHREAD_LOCAL=thread_local)
+        fi
+        if [[ "$f" == src/ocl.cpp ]]; then
+            extra+=(-DSOFT_FP64_OCL_ENABLED=1 -DSOFT_FP64_FTZ_MODE=0)
+        fi
+        "${CXX:-clang++}" -std=c++17 -O3 -S -emit-llvm \
+            -Iinclude -I"$ir_tmp/build/generated" -Isrc "${extra[@]}" \
+            "$f" -o "$out"
+        hit=$(grep -nE "$ir_pattern" "$out" 2>/dev/null || true)
+        if [ -n "$hit" ]; then
+            while IFS= read -r line; do
+                report "[llvm-host-fp] $f:$line"
+            done <<< "$hit"
+        fi
+    done
+else
+    echo "check_no_host_fp: LLVM IR pass skipped (clang++ unavailable)" >&2
+fi
 
 if [ "$findings" -gt 0 ]; then
     echo "" >&2

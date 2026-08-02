@@ -6,7 +6,7 @@
 // cases by sign-extending or zero-extending to 64-bit first.
 //
 // CRITICAL: Apple6+ fp32 is FTZ (MSL §6.20). `soft_f64_from_f32` must read
-// the operand via __builtin_bit_cast(uint32_t, x), NOT through an
+// the operand via bits_of(x), NOT through an
 // intermediate `float` variable — the latter loses subnormal payload when
 // the compiler rematerializes the float value. See tests/test_convert_subnormal.cpp.
 //
@@ -30,6 +30,7 @@ using soft_fp64::internal::clz64;
 using soft_fp64::internal::extract_exp;
 using soft_fp64::internal::extract_frac;
 using soft_fp64::internal::extract_sign;
+using soft_fp64::internal::f32_from_bits;
 using soft_fp64::internal::from_bits;
 using soft_fp64::internal::is_snan_bits;
 using soft_fp64::internal::kExpBias;
@@ -58,7 +59,7 @@ SF64_ALWAYS_INLINE uint64_t u64_magnitude_to_fp64_bits(uint64_t mag, uint32_t si
     // leading 1 sits at bit 63. We want it at bit 52 (the implicit bit),
     // so we shift right by (63 - 52) = 11. The bits discarded by the
     // right-shift form the round/sticky payload for round-to-nearest-even.
-    const int lz = __builtin_clzll(mag); // SAFETY: mag is non-zero (caller checks).
+    const int lz = clz64(mag);
     // Exponent of the leading 1 in the magnitude (position within a 64-bit word).
     const int msb_pos = 63 - lz; // in [0, 63]
     const uint32_t exp = static_cast<uint32_t>(msb_pos + kExpBias);
@@ -332,7 +333,7 @@ SF64_ALWAYS_INLINE double from_f32_impl(float x, sf64_internal_fe_acc& fe) noexc
     // flush-to-zero, so a rematerialized float would collapse subnormals
     // before we get to inspect them. __builtin_bit_cast is a pure type pun
     // (no arithmetic), so the integer payload survives.
-    const uint32_t b = __builtin_bit_cast(uint32_t, x);
+    const uint32_t b = bits_of(x);
 
     const uint32_t sign = (b >> 31) & 1u;
     const uint32_t exp32 = (b >> 23) & 0xFFu;
@@ -417,7 +418,7 @@ SF64_ALWAYS_INLINE float to_f32_impl(double x, sf64_rounding_mode mode,
     if (exp64 == kExpMax) {
         if (frac64 == 0) {
             const uint32_t out = (sign << 31) | (0xFFu << 23);
-            return __builtin_bit_cast(float, out);
+            return f32_from_bits(out);
         }
         // IEEE 754 §6.2 / §7.2: format-conversion of a sNaN raises INVALID.
         if (is_snan_bits(b)) {
@@ -425,7 +426,7 @@ SF64_ALWAYS_INLINE float to_f32_impl(double x, sf64_rounding_mode mode,
         }
         const uint32_t payload = static_cast<uint32_t>(frac64 >> 29) & 0x7FFFFFu;
         const uint32_t out = (sign << 31) | (0xFFu << 23) | payload | 0x400000u;
-        return __builtin_bit_cast(float, out);
+        return f32_from_bits(out);
     }
 
     if (exp64 == 0) {
@@ -435,17 +436,17 @@ SF64_ALWAYS_INLINE float to_f32_impl(double x, sf64_rounding_mode mode,
         // rounds down to -denorm_min.
         if (frac64 == 0) {
             const uint32_t out = sign << 31;
-            return __builtin_bit_cast(float, out);
+            return f32_from_bits(out);
         }
         // Non-zero f64 subnormal collapsing to an f32 zero or denorm_min
         // is tiny + inexact → UNDERFLOW + INEXACT.
         fe.raise(SF64_FE_UNDERFLOW | SF64_FE_INEXACT);
         if ((mode == SF64_RUP && sign == 0u) || (mode == SF64_RDN && sign != 0u)) {
             const uint32_t out = (sign << 31) | 1u;
-            return __builtin_bit_cast(float, out);
+            return f32_from_bits(out);
         }
         const uint32_t out = sign << 31;
-        return __builtin_bit_cast(float, out);
+        return f32_from_bits(out);
     }
 
     const int unbiased = static_cast<int>(exp64) - kExpBias;
@@ -453,7 +454,7 @@ SF64_ALWAYS_INLINE float to_f32_impl(double x, sf64_rounding_mode mode,
 
     if (new_exp >= 0xFF) {
         fe.raise(SF64_FE_OVERFLOW | SF64_FE_INEXACT);
-        return __builtin_bit_cast(float, f32_overflow_bits(sign, mode));
+        return f32_from_bits(f32_overflow_bits(sign, mode));
     }
 
     const uint64_t mant = frac64 | kImplicitBit;
@@ -476,7 +477,7 @@ SF64_ALWAYS_INLINE float to_f32_impl(double x, sf64_rounding_mode mode,
             exp_out += 1u;
             if (exp_out >= 0xFFu) {
                 fe.raise(SF64_FE_OVERFLOW | SF64_FE_INEXACT);
-                return __builtin_bit_cast(float, f32_overflow_bits(sign, mode));
+                return f32_from_bits(f32_overflow_bits(sign, mode));
             }
             frac_out = 0;
         } else {
@@ -486,7 +487,7 @@ SF64_ALWAYS_INLINE float to_f32_impl(double x, sf64_rounding_mode mode,
             fe.raise(SF64_FE_INEXACT);
         }
         const uint32_t out = (sign << 31) | (exp_out << 23) | frac_out;
-        return __builtin_bit_cast(float, out);
+        return f32_from_bits(out);
     }
 
     // new_exp <= 0 — subnormal or underflow.
@@ -498,16 +499,16 @@ SF64_ALWAYS_INLINE float to_f32_impl(double x, sf64_rounding_mode mode,
         // the appropriate sign bump to ±denorm_min.
         if (mant == 0) {
             const uint32_t out = sign << 31;
-            return __builtin_bit_cast(float, out);
+            return f32_from_bits(out);
         }
         // Tiny input lost entirely → UNDERFLOW + INEXACT.
         fe.raise(SF64_FE_UNDERFLOW | SF64_FE_INEXACT);
         if ((mode == SF64_RUP && sign == 0u) || (mode == SF64_RDN && sign != 0u)) {
             const uint32_t out = (sign << 31) | 1u;
-            return __builtin_bit_cast(float, out);
+            return f32_from_bits(out);
         }
         const uint32_t out = sign << 31;
-        return __builtin_bit_cast(float, out);
+        return f32_from_bits(out);
     }
 
     const uint64_t round_pos = uint64_t{1} << (shift - 1);
@@ -532,12 +533,12 @@ SF64_ALWAYS_INLINE float to_f32_impl(double x, sf64_rounding_mode mode,
     if (rounded & (uint64_t{1} << 23)) {
         // Rounded up past subnormal range -> smallest normal.
         const uint32_t out = (sign << 31) | (1u << 23);
-        return __builtin_bit_cast(float, out);
+        return f32_from_bits(out);
     }
 
     const uint32_t frac_out = static_cast<uint32_t>(rounded) & 0x7FFFFFu;
     const uint32_t out = (sign << 31) | frac_out;
-    return __builtin_bit_cast(float, out);
+    return f32_from_bits(out);
 }
 
 } // namespace
@@ -717,10 +718,9 @@ extern "C" uint64_t sf64_to_u64_r(sf64_rounding_mode mode, double x) {
 // ---------------------------------------------------------------------------
 // Caller-state (`_ex`) convert entries. Bodies are bit-identical to the
 // TLS-backed surface above. See src/arithmetic.cpp for design rationale.
-// Compiled out under SOFT_FP64_FENV_MODE == 0 (disabled).
+// Exported in every build mode. Disabled mode preserves the numerical ABI
+// and intentionally drops all raised flags.
 // ---------------------------------------------------------------------------
-
-#if SOFT_FP64_FENV_MODE == 1 || SOFT_FP64_FENV_MODE == 2
 
 extern "C" double sf64_from_f32_ex(float x, sf64_fe_state_t* state) {
     sf64_internal_fe_acc fe{state};
@@ -892,5 +892,3 @@ extern "C" uint64_t sf64_to_u64_r_ex(sf64_rounding_mode mode, double x, sf64_fe_
     fe.flush();
     return r;
 }
-
-#endif // SOFT_FP64_FENV_MODE == 1 || SOFT_FP64_FENV_MODE == 2

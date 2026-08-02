@@ -1,6 +1,6 @@
 # Changelog
 
-All notable changes to `soft-fp64` land here. Format loosely follows
+All notable changes to `soft-fp` land here. Format loosely follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
@@ -9,7 +9,33 @@ See `README.md` for the full precision table.
 
 ## [Unreleased]
 
-No unreleased changes.
+### Added
+
+- Unified `soft_fp` 2.0 package and umbrella target, retaining the binary64
+  compatibility package.
+- Production IEEE binary128 and binary256 core libraries with explicit word
+  ABIs, all IEEE rounding modes, caller-owned exception state, conversions,
+  comparisons, remainder, square root, fused multiply-add, and oracle tests.
+- Generated feature/semantic configuration, C11 API smoke coverage,
+  deterministic source manifests, and an emitted-LLVM-IR host-FP gate.
+- MPFR differential suites and sanitizer fuzz targets for binary128 and
+  binary256, plus binary128 thread-isolation coverage.
+
+### Fixed
+
+- Removed the compiler-native `__uint128_t` dependency from binary64.
+- Prevented release optimizers from reconstructing host floating-point
+  instructions while retaining an inline bit-carrier boundary; the IR gate
+  now checks the actual `-O3` release level.
+- Made `_ex` symbols consistently linkable in every fenv configuration.
+- Corrected binary256 tininess-after-rounding flags at the minimum-normal
+  boundary and isolated Berkeley SoftFloat's public symbols and state behind
+  the binary128 backend prefix.
+- Corrected `lgamma_r` sign output at NaNs and poles, C header compatibility,
+  package feature visibility, attribution installation, and exception and
+  integer-conversion documentation.
+- Removed the empty experimental test and made exhaustive binary32 round-trip
+  coverage independent of libFuzzer.
 
 ## [1.3.0] — 2026-05-11
 

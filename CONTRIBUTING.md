@@ -1,4 +1,4 @@
-# Contributing to soft-fp64
+# Contributing to soft-fp
 
 Read this before changing anything in `src/`, `tests/`, `bench/`, or
 `.github/workflows/`.
@@ -59,14 +59,14 @@ is implemented on top of `sf64_add` / `sf64_mul`). Do not add
 `__attribute__((optimize))`, `set_source_files_properties` overrides,
 or any other source-level escape. The guard script flags these.
 
-### Public ABI is `sf64_*` only
+### Public ABI uses format-prefixed C symbols
 
-`-fvisibility=hidden -fvisibility-inlines-hidden` is set on the
-library target. Cross-TU internal helpers use the `sf64_internal_`
-prefix and `__attribute__((visibility("hidden")))`. The
-`install-smoke` CI job greps `nm -g` on `libsoft_fp64.a` and fails
-if any non-`sf64_*` symbol escapes (`__clang_call_terminate` is the
-only allowed exception).
+`-fvisibility=hidden -fvisibility-inlines-hidden` is set on every library
+target. Public symbols use `sf64_*`, `sf128_*`, or `sf256_*`; cross-TU
+helpers remain hidden. `scripts/check_abi_manifest.sh` verifies that every
+enabled public declaration is defined and that Berkeley SoftFloat's public
+API and state cannot leak under their upstream names. The fp64 ABI CI job
+also rejects unexpected globals in `libsoft_fp64.a`.
 
 ## Integrity rules
 

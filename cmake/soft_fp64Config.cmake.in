@@ -13,4 +13,26 @@ set_and_check(soft_fp64_SOURCE_DIR        "@PACKAGE_SOFT_FP64_SOURCE_RELDIR@")
 set_and_check(soft_fp64_SLEEF_SOURCE_DIR  "@PACKAGE_SOFT_FP64_SLEEF_SOURCE_RELDIR@")
 set_and_check(soft_fp64_INCLUDE_DIR       "@PACKAGE_SOFT_FP64_INCLUDE_RELDIR@")
 
+# Contract for consumers that compile the installed source bodies instead of
+# linking the archive. Use this explicit manifest; do not glob the source tree.
+set(soft_fp64_COMPILE_DEFINITIONS
+    "SOFT_FP64_FENV_MODE=@SOFT_FP64_FENV_MODE_VALUE@"
+    "SOFT_FP64_SNAN_PROPAGATE=@SOFT_FP64_SNAN_PROPAGATE_VALUE@"
+    "SOFT_FP64_FTZ_MODE=@SOFT_FP64_FTZ_VALUE@")
+set(soft_fp64_SOURCES
+    "${soft_fp64_SOURCE_DIR}/arithmetic.cpp"
+    "${soft_fp64_SOURCE_DIR}/compare.cpp"
+    "${soft_fp64_SOURCE_DIR}/convert.cpp"
+    "${soft_fp64_SOURCE_DIR}/sqrt_fma.cpp"
+    "${soft_fp64_SOURCE_DIR}/rounding.cpp"
+    "${soft_fp64_SOURCE_DIR}/classify.cpp"
+    "${soft_fp64_SOURCE_DIR}/fenv.cpp"
+    "${soft_fp64_SLEEF_SOURCE_DIR}/sleef_exp_log.cpp"
+    "${soft_fp64_SLEEF_SOURCE_DIR}/sleef_trig.cpp"
+    "${soft_fp64_SLEEF_SOURCE_DIR}/sleef_inv_hyp_pow.cpp"
+    "${soft_fp64_SLEEF_SOURCE_DIR}/sleef_special.cpp")
+if(@SOFT_FP64_OCL_VALUE@)
+    list(APPEND soft_fp64_SOURCES "${soft_fp64_SOURCE_DIR}/ocl.cpp")
+endif()
+
 check_required_components(soft_fp64)

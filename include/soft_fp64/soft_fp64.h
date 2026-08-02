@@ -14,6 +14,8 @@
 // SPDX-License-Identifier: MIT
 
 #include "defines.h"
-#include "double.h"
 #include "soft_f64.h"
+#ifdef __cplusplus
+#include "double.h"
 #include "vec.h"
+#endif

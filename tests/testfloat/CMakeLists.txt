@@ -191,8 +191,7 @@ endif()
 add_dependencies(run_testfloat testfloat_gen)
 
 add_test(NAME test_testfloat COMMAND run_testfloat)
-# Per-mode coverage added in TODO #10 roughly quadruples the 1.0 runtime
-# (5 modes × arithmetic + mulAdd + convert); bump the timeout
-# accordingly. On Apple Silicon the full sweep lands around 10-12
-# minutes under Release; CI adds margin for shared-runner noise.
+# Five-mode arithmetic, mulAdd, and conversion coverage is intentionally a
+# long test. The timeout leaves margin for debug builds and shared CI runners;
+# corpus sizes are fixed in run_testfloat.cpp rather than derived from time.
 set_tests_properties(test_testfloat PROPERTIES TIMEOUT 2400)

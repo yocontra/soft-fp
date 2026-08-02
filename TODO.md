@@ -1,38 +1,101 @@
 # TODO
 
-Single source of truth for open work. Items closed at 1.0 / 1.1 / 1.2 / 1.3
-are recorded in `CHANGELOG.md`, not here.
+This is the single source of truth for unfinished work owned by `soft-fp`.
+Completed work belongs in `CHANGELOG.md`; downstream compiler and runtime
+integration belongs in the consuming project.
 
-This file tracks work owned by this repo. Downstream integration patches
-belong in the consumer project that wires `sf64_*` into its own compiler,
-runtime, or kernel ABI.
+There are no known correctness or release-blocking defects in the supported
+2.0 API. The items below extend that API or strengthen its validation. Do not
+add placeholder symbols: a new operation is public only when its implementation,
+accuracy contract, documentation, and oracle tests land together.
 
-## Post-1.3
+## Wider-format transcendentals
 
-### `soft-fp128` sibling library
+Add format-specific transcendental libraries for binary128 and binary256. The
+initial surface should mirror the strict binary64 functions where the
+mathematical operation is meaningful: trigonometric and inverse trigonometric,
+hyperbolic and inverse hyperbolic, exponential and logarithmic, power and root,
+error, and gamma families.
 
-**What.** Same design playbook (Mesa arithmetic port + SLEEF / DD-style
-transcendentals + TestFloat + MPFR oracle) extended to 113-bit
-significand. Static archive `libsoft_fp128.a` alongside `libsoft_fp64.a`
-in this same `yocontra/soft-fp` repo. Public C ABI prefix `sf128_*`
-mirroring `sf64_*` (arithmetic, compare, full conversion matrix
-including `f64 ↔ f128` and `i128 ↔ f128`, sqrt, fma, rounding,
-classify, transcendentals). u10 transcendentals gated against MPFR
-300-bit; bit-exact arithmetic gated against TestFloat fp128 vectors.
+Acceptance criteria:
 
-**Why it matters.** Same consumers (GPU / MCU / wasm targets without
-hardware fp128) need it. Decoupled from fp64 on the release timeline,
-but co-located so the build infrastructure, oracle setup, benchmark
-harness, and ABI conventions are shared rather than re-invented in a
-sibling repo.
+- Implement argument reduction, constants, and polynomial or rational kernels
+  at the destination format's precision; do not forward through host `libm`,
+  binary64, `long double`, or compiler-native floating-point types.
+- Specify special-case, signed-zero, NaN-payload, rounding, and exception-flag
+  behavior for every public function.
+- Establish per-function ULP contracts using independent MPFR oracles at a
+  precision comfortably above the destination format.
+- Gate difficult regions separately, including reduction boundaries, poles,
+  zero crossings, subnormal outputs, and overflow/underflow transitions.
+- Extend the optimized-IR audit so every new production source is proven free
+  of host floating-point arithmetic.
+- Add C ABI coverage, fuzz targets, benchmarks, API documentation, and ABI
+  manifest entries in the same change as each function family.
 
-**What's needed.** When work starts, introduce a top-level layout
-split — likely `fp64/` and `fp128/` subtrees with a top-level
-`CMakeLists.txt` orchestrating both — and grow the existing
-`adapters/` and `tests/testfloat/` / `tests/mpfr/` infrastructure to
-exercise both precisions. Until then, the repo stays flat with `src/`
-+ `include/soft_fp64/` at root; restructuring before fp128 has files
-to put somewhere is premature. SLEEF doesn't ship fp128 polynomials,
-so the transcendental story will draw from a different reference (Sun
-fdlibm-q, Boost.Multiprecision-derived coefficient sets, or DD/QD
-arithmetic on top of `sf64_*` — TBD when the work starts).
+## Complete the conversion matrix
+
+Grow the wider core APIs from the current fixed-width integer and binary64
+conversions to a symmetric conversion surface.
+
+Acceptance criteria:
+
+- Add bit-exact binary32 conversions for binary128 and binary256 in all five
+  rounding modes, including caller-owned exception-state variants.
+- Add direct binary128-to-binary256 and binary256-to-binary128 conversions;
+  they must not round through binary64.
+- Design explicit word-struct ABIs for signed and unsigned 128-bit and 256-bit
+  integers, then add integer conversions without relying on compiler-native
+  `__int128` types.
+- Make the `sf128_*` and `sf256_*` narrowing APIs structurally consistent,
+  including rounding-mode and `_ex` variants for every supported width.
+- Validate exact results and flags against MPFR and an independent integer
+  oracle across boundaries, randomized inputs, every rounding mode, NaNs,
+  infinities, and saturation cases.
+
+## Wider-format performance work
+
+The binary128 and binary256 cores are correctness-first implementations and do
+not yet have checked-in performance baselines.
+
+Acceptance criteria:
+
+- Extend the benchmark harness to cover every public core operation for both
+  formats without allowing constant folding or dead-code elimination.
+- Record reproducible per-platform metadata and establish non-flaky regression
+  gates on at least Linux x86-64 and macOS arm64.
+- Profile division, square root, remainder, and FMA, then optimize algorithmic
+  bottlenecks without weakening bit-exactness or the no-host-FP rule.
+- Add comparative measurements against maintained arbitrary-precision or
+  software-floating-point implementations, clearly separating informational
+  comparisons from regression gates.
+
+## Portability and release coverage
+
+Broaden validation beyond the current macOS arm64, Linux x86-64, and Windows
+MSVC configurations before claiming additional target support.
+
+Acceptance criteria:
+
+- Add at least one big-endian compile-and-test job and verify the explicit word
+  ABIs remain byte-order independent.
+- Add a 32-bit target job to exercise limb arithmetic where the native word
+  size is smaller than `uint64_t`.
+- Add a freestanding or GPU-oriented compile job with TLS and the host floating
+  environment unavailable, using only caller-owned `_ex` state.
+- Exercise installed `soft_fp`, `soft_fp64`, `soft_fp128`, and `soft_fp256`
+  packages from both C and C++ downstream projects; add pkg-config metadata for
+  the wider libraries if that integration path is retained.
+- Produce and test relocatable 2.x release archives, generate API documentation,
+  verify installed license/attribution files, and document the release signing
+  and provenance process.
+
+## Maintenance rules
+
+- Every bug fix needs a minimal regression test that fails before the fix.
+- Every public ABI addition must update the ABI manifest and install-consumer
+  tests.
+- Dependency revisions and CI actions remain pinned and are updated through a
+  reviewed change with the full validation matrix.
+- Performance baseline changes require repeated measurements and an explanation
+  in the commit or pull request; never raise a threshold merely to make CI pass.

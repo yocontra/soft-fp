@@ -42,15 +42,11 @@ using soft_fp64::internal::sf64_internal_fe_acc;
 // ---- bit helpers --------------------------------------------------------
 
 SF64_SLEEF_INLINE uint64_t bits_of(double x) noexcept {
-    // SAFETY: double and uint64_t are the same size with no padding; this
-    // is a bit-level reinterpret, not a value conversion.
-    return __builtin_bit_cast(uint64_t, x);
+    return soft_fp64::internal::bits_of(x);
 }
 
 SF64_SLEEF_INLINE double from_bits(uint64_t b) noexcept {
-    // SAFETY: double and uint64_t are the same size with no padding; this
-    // is a bit-level reinterpret, not a value conversion.
-    return __builtin_bit_cast(double, b);
+    return soft_fp64::internal::from_bits(b);
 }
 
 SF64_SLEEF_INLINE bool isnan_(double x) noexcept {

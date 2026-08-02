@@ -159,7 +159,7 @@ struct NormalisedSubnormal {
 
 SF64_ALWAYS_INLINE NormalisedSubnormal normalise_subnormal(uint64_t frac) noexcept {
     // SAFETY: caller ensures frac != 0.
-    const int lz = __builtin_clzll(frac);
+    const int lz = clz64(frac);
     // We want bit 52 to be the MSB, i.e. bit index 52. Currently MSB is at
     // bit (63 - lz). Shift left by `(63 - lz) - 52 = 11 - lz`? Let's derive
     // properly: shift so that frac << shift has bit 52 set. shift = 52 -
@@ -295,7 +295,7 @@ SF64_ALWAYS_INLINE double sub_magnitudes(uint32_t a_sign, uint64_t a_bits, uint6
     // MSB is at bit (63 - clz). Shift left by (61 - (63 - clz)) = clz - 2.
     // diff < 2^62 by construction (both operands had bit 61 set and their
     // difference is strictly smaller), so clz >= 2 → shift >= 0.
-    const int lz = __builtin_clzll(diff);
+    const int lz = clz64(diff);
     const int norm_shift = lz - 2;
     diff <<= norm_shift;
     exp -= norm_shift;
@@ -321,14 +321,14 @@ SF64_ALWAYS_INLINE double mul_impl(uint64_t ab, uint64_t bb, uint32_t r_sign,
     }
 
     // 53 × 53 → up to 106-bit product.
-    const __uint128_t product = static_cast<__uint128_t>(sig_a) * static_cast<__uint128_t>(sig_b);
+    const U128 product = U128{sig_a} * U128{sig_b};
     int32_t exp_r = exp_a + exp_b - kExpBias;
 
     // Shift into canonical "<<9" layout.
     uint64_t sig;
     if ((product >> 105) & 1u) {
         const int shift = 44;
-        const __uint128_t lost_mask = ((static_cast<__uint128_t>(1) << shift) - 1);
+        const U128 lost_mask = (U128{1} << shift) - U128{1};
         const bool sticky = (product & lost_mask) != 0;
         sig = static_cast<uint64_t>(product >> shift);
         if (sticky)
@@ -336,7 +336,7 @@ SF64_ALWAYS_INLINE double mul_impl(uint64_t ab, uint64_t bb, uint32_t r_sign,
         ++exp_r;
     } else {
         const int shift = 43;
-        const __uint128_t lost_mask = ((static_cast<__uint128_t>(1) << shift) - 1);
+        const U128 lost_mask = (U128{1} << shift) - U128{1};
         const bool sticky = (product & lost_mask) != 0;
         sig = static_cast<uint64_t>(product >> shift);
         if (sticky)
@@ -361,10 +361,9 @@ SF64_ALWAYS_INLINE double div_impl(uint64_t ab, uint64_t bb, uint32_t r_sign,
         --exp_r;
     }
 
-    const __uint128_t num = static_cast<__uint128_t>(sig_a) << 55;
-    const __uint128_t den = static_cast<__uint128_t>(sig_b);
-    const uint64_t quotient = static_cast<uint64_t>(num / den);
-    const __uint128_t remainder = num % den;
+    const U128 num = U128{sig_a} << 55;
+    uint64_t remainder;
+    const uint64_t quotient = divmod_u128_u64(num, sig_b, remainder);
 
     uint64_t sig = quotient << 6;
     if (remainder != 0) {
@@ -718,7 +717,7 @@ extern "C" double sf64_rem(double a, double b) {
     }
 
     // Normalise: shift left so MSB is at bit 52 (implicit position).
-    const int lz = __builtin_clzll(sig_a);
+    const int lz = clz64(sig_a);
     // MSB currently at bit (63 - lz). Want at bit 52.
     const int shift = (63 - lz) - 52;
     int32_t exp_r;
@@ -751,13 +750,10 @@ extern "C" double sf64_rem(double a, double b) {
 // honoured as "drop flags" (zero-overhead path for callers that don't
 // care about flag observability).
 //
-// Compiled out under SOFT_FP64_FENV_MODE == 0 (disabled): the disabled
-// archive intentionally has no fenv ABI surface, both the TLS and the
-// `_ex` symbols are absent, and consumers that need flag observability
-// must build with tls or explicit.
+// These symbols are present in every build mode so the public ABI does not
+// depend on a build option. In disabled mode the accumulator deliberately
+// drops raised flags, while the numerical result remains identical.
 // ---------------------------------------------------------------------------
-
-#if SOFT_FP64_FENV_MODE == 1 || SOFT_FP64_FENV_MODE == 2
 
 extern "C" double sf64_add_ex(double a, double b, sf64_fe_state_t* state) {
     sf64_internal_fe_acc fe{state};
@@ -818,5 +814,3 @@ extern "C" double sf64_div_r_ex(sf64_rounding_mode mode, double a, double b,
     fe.flush();
     return r;
 }
-
-#endif // SOFT_FP64_FENV_MODE == 1 || SOFT_FP64_FENV_MODE == 2

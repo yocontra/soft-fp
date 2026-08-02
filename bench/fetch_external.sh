@@ -22,14 +22,17 @@ clone() {
         echo "bench/external: cloning $url -> $dest"
         git clone --depth 1 "$url" "$dest"
     fi
-    ( cd "$dest" && git fetch --depth 1 origin "$ref" >/dev/null 2>&1 || true; git checkout "$ref" )
+    ( cd "$dest" && git fetch --depth 1 origin "$ref" >/dev/null 2>&1; git checkout --detach "$ref" )
 }
 
-# Berkeley SoftFloat 3e (upstream "release" tag: 3e, master).
-clone https://github.com/ucb-bar/berkeley-softfloat-3 "$EXT/softfloat" master
+# Immutable audited revisions. Update deliberately alongside benchmark
+# compatibility code; never benchmark an unreviewed moving branch head.
+clone https://github.com/ucb-bar/berkeley-softfloat-3 "$EXT/softfloat" \
+    a0c6494cdc11865811dec815d5c0049fba9d82a8
 
 # ckormanyos/soft_double
-clone https://github.com/ckormanyos/soft_double "$EXT/soft_double" main
+clone https://github.com/ckormanyos/soft_double "$EXT/soft_double" \
+    cd1abb3880a3a6e3e2ab17c306966a632323a7a8
 
 echo
 echo "Done. Now:"

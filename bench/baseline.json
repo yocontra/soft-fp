@@ -1,40 +1,222 @@
 {
   "schema": "soft-fp64.bench.v1",
+  "environment": {
+    "hardware": "Apple M2 Max",
+    "os": "macOS 26.4.1",
+    "compiler": "Apple clang 21.0.0",
+    "build_type": "Release",
+    "method": "minimum ns/op from three isolated 1000 ms/op runs"
+  },
   "results": [
-    {"name": "add", "ns_per_op": 12.4525, "mops_per_sec": 80.3050, "iterations": 67108864},
-    {"name": "sub", "ns_per_op": 13.4751, "mops_per_sec": 74.2112, "iterations": 67108864},
-    {"name": "mul", "ns_per_op": 6.4651, "mops_per_sec": 154.6774, "iterations": 134217728},
-    {"name": "div", "ns_per_op": 18.6911, "mops_per_sec": 53.5013, "iterations": 33554432},
-    {"name": "fma", "ns_per_op": 20.0037, "mops_per_sec": 49.9908, "iterations": 33554432},
-    {"name": "sqrt", "ns_per_op": 128.0638, "mops_per_sec": 7.8086, "iterations": 4194304},
-    {"name": "rsqrt", "ns_per_op": 151.8836, "mops_per_sec": 6.5840, "iterations": 4194304},
-    {"name": "from_i32", "ns_per_op": 1.2117, "mops_per_sec": 825.2688, "iterations": 536870912},
-    {"name": "to_i32", "ns_per_op": 7.3498, "mops_per_sec": 136.0576, "iterations": 134217728},
-    {"name": "floor", "ns_per_op": 6.6580, "mops_per_sec": 150.1944, "iterations": 134217728},
-    {"name": "ceil", "ns_per_op": 6.5518, "mops_per_sec": 152.6298, "iterations": 134217728},
-    {"name": "trunc", "ns_per_op": 0.9090, "mops_per_sec": 1100.0887, "iterations": 1073741824},
-    {"name": "rint", "ns_per_op": 5.6283, "mops_per_sec": 177.6724, "iterations": 134217728},
-    {"name": "fcmp_oeq", "ns_per_op": 1.9157, "mops_per_sec": 522.0158, "iterations": 268435456},
-    {"name": "sin", "ns_per_op": 405.7980, "mops_per_sec": 2.4643, "iterations": 2097152},
-    {"name": "cos", "ns_per_op": 449.7246, "mops_per_sec": 2.2236, "iterations": 2097152},
-    {"name": "tan", "ns_per_op": 526.2747, "mops_per_sec": 1.9001, "iterations": 1048576},
-    {"name": "asin", "ns_per_op": 343.6982, "mops_per_sec": 2.9095, "iterations": 2097152},
-    {"name": "acos", "ns_per_op": 357.9568, "mops_per_sec": 2.7936, "iterations": 2097152},
-    {"name": "atan", "ns_per_op": 646.7278, "mops_per_sec": 1.5462, "iterations": 1048576},
-    {"name": "atan2", "ns_per_op": 712.4414, "mops_per_sec": 1.4036, "iterations": 1048576},
-    {"name": "sinh", "ns_per_op": 426.3953, "mops_per_sec": 2.3452, "iterations": 2097152},
-    {"name": "cosh", "ns_per_op": 443.0277, "mops_per_sec": 2.2572, "iterations": 2097152},
-    {"name": "tanh", "ns_per_op": 265.2373, "mops_per_sec": 3.7702, "iterations": 2097152},
-    {"name": "asinh", "ns_per_op": 657.6881, "mops_per_sec": 1.5205, "iterations": 1048576},
-    {"name": "acosh", "ns_per_op": 606.6416, "mops_per_sec": 1.6484, "iterations": 1048576},
-    {"name": "atanh", "ns_per_op": 480.1553, "mops_per_sec": 2.0827, "iterations": 2097152},
-    {"name": "exp", "ns_per_op": 221.9351, "mops_per_sec": 4.5058, "iterations": 4194304},
-    {"name": "exp2", "ns_per_op": 220.7484, "mops_per_sec": 4.5300, "iterations": 4194304},
-    {"name": "expm1", "ns_per_op": 651.5560, "mops_per_sec": 1.5348, "iterations": 1048576},
-    {"name": "log", "ns_per_op": 380.2210, "mops_per_sec": 2.6300, "iterations": 2097152},
-    {"name": "log2", "ns_per_op": 386.5344, "mops_per_sec": 2.5871, "iterations": 2097152},
-    {"name": "log1p", "ns_per_op": 275.5128, "mops_per_sec": 3.6296, "iterations": 2097152},
-    {"name": "pow", "ns_per_op": 1722.1131, "mops_per_sec": 0.5807, "iterations": 524288},
-    {"name": "cbrt", "ns_per_op": 897.9710, "mops_per_sec": 1.1136, "iterations": 1048576}
+    {
+      "name": "acos",
+      "ns_per_op": 619.3482,
+      "mops_per_sec": 1.6146,
+      "iterations": 2097152
+    },
+    {
+      "name": "acosh",
+      "ns_per_op": 1089.2855,
+      "mops_per_sec": 0.918,
+      "iterations": 1048576
+    },
+    {
+      "name": "add",
+      "ns_per_op": 14.6585,
+      "mops_per_sec": 68.2199,
+      "iterations": 134217728
+    },
+    {
+      "name": "asin",
+      "ns_per_op": 594.1457,
+      "mops_per_sec": 1.6831,
+      "iterations": 2097152
+    },
+    {
+      "name": "asinh",
+      "ns_per_op": 1175.1463,
+      "mops_per_sec": 0.851,
+      "iterations": 1048576
+    },
+    {
+      "name": "atan",
+      "ns_per_op": 1047.833,
+      "mops_per_sec": 0.9544,
+      "iterations": 1048576
+    },
+    {
+      "name": "atan2",
+      "ns_per_op": 1156.8177,
+      "mops_per_sec": 0.8644,
+      "iterations": 1048576
+    },
+    {
+      "name": "atanh",
+      "ns_per_op": 896.771,
+      "mops_per_sec": 1.1151,
+      "iterations": 2097152
+    },
+    {
+      "name": "cbrt",
+      "ns_per_op": 1802.3944,
+      "mops_per_sec": 0.5548,
+      "iterations": 1048576
+    },
+    {
+      "name": "ceil",
+      "ns_per_op": 7.5776,
+      "mops_per_sec": 131.968,
+      "iterations": 134217728
+    },
+    {
+      "name": "cos",
+      "ns_per_op": 859.069,
+      "mops_per_sec": 1.1641,
+      "iterations": 2097152
+    },
+    {
+      "name": "cosh",
+      "ns_per_op": 983.0138,
+      "mops_per_sec": 1.0173,
+      "iterations": 1048576
+    },
+    {
+      "name": "div",
+      "ns_per_op": 22.2784,
+      "mops_per_sec": 44.8866,
+      "iterations": 67108864
+    },
+    {
+      "name": "exp",
+      "ns_per_op": 485.9429,
+      "mops_per_sec": 2.0579,
+      "iterations": 2097152
+    },
+    {
+      "name": "exp2",
+      "ns_per_op": 498.3542,
+      "mops_per_sec": 2.0066,
+      "iterations": 2097152
+    },
+    {
+      "name": "expm1",
+      "ns_per_op": 1164.4191,
+      "mops_per_sec": 0.8588,
+      "iterations": 1048576
+    },
+    {
+      "name": "fcmp_oeq",
+      "ns_per_op": 3.274,
+      "mops_per_sec": 305.4399,
+      "iterations": 536870912
+    },
+    {
+      "name": "floor",
+      "ns_per_op": 8.6861,
+      "mops_per_sec": 115.1265,
+      "iterations": 134217728
+    },
+    {
+      "name": "fma",
+      "ns_per_op": 34.5406,
+      "mops_per_sec": 28.9514,
+      "iterations": 33554432
+    },
+    {
+      "name": "from_i32",
+      "ns_per_op": 4.7837,
+      "mops_per_sec": 209.0415,
+      "iterations": 268435456
+    },
+    {
+      "name": "log",
+      "ns_per_op": 731.7949,
+      "mops_per_sec": 1.3665,
+      "iterations": 2097152
+    },
+    {
+      "name": "log1p",
+      "ns_per_op": 515.0145,
+      "mops_per_sec": 1.9417,
+      "iterations": 2097152
+    },
+    {
+      "name": "log2",
+      "ns_per_op": 747.7597,
+      "mops_per_sec": 1.3373,
+      "iterations": 2097152
+    },
+    {
+      "name": "mul",
+      "ns_per_op": 7.137,
+      "mops_per_sec": 140.1151,
+      "iterations": 268435456
+    },
+    {
+      "name": "pow",
+      "ns_per_op": 3033.9296,
+      "mops_per_sec": 0.3296,
+      "iterations": 524288
+    },
+    {
+      "name": "rint",
+      "ns_per_op": 6.9168,
+      "mops_per_sec": 144.5748,
+      "iterations": 268435456
+    },
+    {
+      "name": "rsqrt",
+      "ns_per_op": 225.7992,
+      "mops_per_sec": 4.4287,
+      "iterations": 8388608
+    },
+    {
+      "name": "sin",
+      "ns_per_op": 752.9888,
+      "mops_per_sec": 1.328,
+      "iterations": 2097152
+    },
+    {
+      "name": "sinh",
+      "ns_per_op": 944.6906,
+      "mops_per_sec": 1.0585,
+      "iterations": 2097152
+    },
+    {
+      "name": "sqrt",
+      "ns_per_op": 204.6441,
+      "mops_per_sec": 4.8865,
+      "iterations": 8388608
+    },
+    {
+      "name": "sub",
+      "ns_per_op": 15.3397,
+      "mops_per_sec": 65.1902,
+      "iterations": 67108864
+    },
+    {
+      "name": "tan",
+      "ns_per_op": 1054.7419,
+      "mops_per_sec": 0.9481,
+      "iterations": 1048576
+    },
+    {
+      "name": "tanh",
+      "ns_per_op": 565.3516,
+      "mops_per_sec": 1.7688,
+      "iterations": 2097152
+    },
+    {
+      "name": "to_i32",
+      "ns_per_op": 7.4387,
+      "mops_per_sec": 134.4326,
+      "iterations": 268435456
+    },
+    {
+      "name": "trunc",
+      "ns_per_op": 4.7749,
+      "mops_per_sec": 209.4281,
+      "iterations": 268435456
+    }
   ]
 }

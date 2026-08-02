@@ -13,9 +13,10 @@
  * library.
  *
  * Every function below takes/returns plain `double` at the C ABI level. The
- * implementation bit-casts to `uint64_t` internally and must not rely on host
- * FPU arithmetic; the same function runs bit-identically on hosts whose FPU
- * flushes subnormals, lacks an FMA unit, or reroutes `double` through `float`.
+ * implementation bit-casts to `uint64_t` internally and does not rely on host
+ * FPU arithmetic. The ABI still requires the compiler/IR to preserve a 64-bit
+ * binary64 carrier in function signatures; source languages with no `double`
+ * type require a lowering adapter.
  *
  * @section precision Precision
  *
@@ -29,7 +30,8 @@
  * @section non_goals Non-goals
  *
  * - Complex-number math.
- * - `fp128` / `fp16` (separate project if ever needed).
+ * - Formats other than binary64; include `soft_fp/soft_fp.h` for the
+ *   binary128 and binary256 APIs shipped by this project.
  *
  * @section ieee IEEE-754 conformance
  *
@@ -54,8 +56,8 @@
  *
  * @section abi ABI stability
  *
- * v1.0 freezes the `sf64_*` symbol set and calling convention. Additive
- * changes (new symbols) are v1.x-minor. Any breaking change (signature change,
+ * v1.0 froze the `sf64_*` symbol set and calling convention. Additive
+ * changes preserve that ABI. Any breaking change (signature change,
  * symbol removal, semantic change of a documented guarantee) requires a major
  * version bump.
  *
@@ -64,8 +66,13 @@
 
 #include "defines.h"
 #include "rounding_mode.h"
+#include "soft_fp64/config.h"
 
+#ifdef __cplusplus
 #include <cstdint>
+#else
+#include <stdint.h>
+#endif
 
 // The library is compiled with `-fvisibility=hidden`; every declaration
 // in this header is part of the shipped ABI and must escape the archive.
@@ -192,9 +199,11 @@ double sf64_fmax_precise(double a, double b);
  * @brief Bit-exact conversions between integer, `float` (binary32), and `double` (binary64).
  *
  * All `from_*` widenings are bit-exact. Narrowing `to_*` integer conversions
- * follow C99 `(int_type)double` (truncation toward zero); out-of-range inputs
- * have implementation-defined result (the library returns the wrapped or
- * saturated bit pattern deterministically, matching TestFloat's reference).
+ * truncate toward zero by default. Results are fully defined: finite and
+ * infinite out-of-range values saturate to the destination range, negative
+ * values converted to unsigned saturate to zero, and NaNs return zero. Every
+ * NaN or out-of-range conversion raises `SF64_FE_INVALID` when flag tracking
+ * is enabled; discarded fractional bits raise `SF64_FE_INEXACT`.
  * `sf64_from_f32` / `sf64_to_f32` are **subnormal-preserving** on both sides —
  * they use `__builtin_bit_cast` internally so host fp32 FTZ (e.g. Apple6+ MSL
  * §6.20) does not collapse subnormal payloads.
@@ -236,8 +245,8 @@ double sf64_from_u64(uint64_t x);
  *  @return `(int8_t)trunc(x)` for in-range `x`. NaN returns `0` (soft-fp64
  *  chose this over SoftFloat's `INT*_MAX` so `sf64_to_iN(NaN)` and
  *  `sf64_to_uN(NaN)` are both zero — deterministic and platform-independent).
- *  Out-of-range finite inputs wrap to the C99 truncation result, matching
- *  the TestFloat reference. */
+ *  Finite and infinite out-of-range inputs saturate to `INT8_MIN` or
+ *  `INT8_MAX` and raise `SF64_FE_INVALID`. */
 int8_t sf64_to_i8(double x);
 /** @brief C99-style truncation `double → int16_t`. See @ref sf64_to_i8. */
 int16_t sf64_to_i16(double x);
@@ -730,27 +739,20 @@ double sf64_cbrt(double x);
  */
 
 /** @brief Error function `erf(x) = 2/√π · ∫₀ˣ e^{-t²} dt`. @param x @return `erf(x)` in `[-1, 1]`.
- *  @details Measured worst-case **≤256 ULP** on `[-5, 5]` (Taylor/Chebyshev
- *  stitching). `erf(±0) = ±0`, `erf(±inf) = ±1`. NaN → NaN.
- *  @note **Experimental** — tightening to ≤4 ULP is deferred pending
- *  polynomial-table refinement. */
+ *  @details U10 **≤4 ULP** on `[-5, 5]` against the 200-bit MPFR gate.
+ *  `erf(±0) = ±0`, `erf(±inf) = ±1`. NaN → NaN. */
 double sf64_erf(double x);
 
 /** @brief Complementary error function `erfc(x) = 1 - erf(x)`. @param x @return `erfc(x)` in `[0,
  * 2]`.
- *  @details Worst-case **≤1024 ULP** on `[-5, 27]` against 200-bit MPFR.
- *  The deep-tail exp argument is carried in double-double
- *  (`erfc_cheb` → `expk_dd`), so the relative drift in the [15, 27] region
- *  is ≤ 8 ULP despite the absolute result sitting near IEEE double's
- *  underflow floor.
+ *  @details U10 **≤4 ULP** on `[-5, 27]` against the 200-bit MPFR gate,
+ *  including the deep tail near binary64's underflow floor.
  *  `erfc(-inf) = 2`, `erfc(+inf) = +0`. NaN → NaN. */
 double sf64_erfc(double x);
 
 /** @brief True gamma function `Γ(x)`. @param x @return `tgamma(x)`.
- *  @details Worst-case **≤1024 ULP** on `[0.5, 170]` against 200-bit MPFR.
- *  `tgamma_pos` builds the Lanczos lg body in double-double and feeds it
- *  into `expk_dd`, which keeps the near-overflow bucket (`x ∈ [20, 170]`)
- *  inside GAMMA tier at ~0.9 k ULP worst-case.
+ *  @details U10 **≤4 ULP** on `[0.5, 170]` against the 200-bit MPFR gate,
+ *  including the near-overflow bucket.
  *  `tgamma(positive integer n) = (n-1)!` exactly where representable.
  *  `tgamma(0) = ±inf` (sign follows `±0`). `tgamma(negative integer) = NaN`.
  *  `tgamma(-inf) = NaN`, `tgamma(+inf) = +inf`. NaN → NaN. */
@@ -874,6 +876,8 @@ double sf64_rint_r(sf64_rounding_mode mode, double x);
  * @{
  */
 
+#if SOFT_FP64_HAS_OCL_ABI
+
 double sf64_ocl_add(double a, double b);
 double sf64_ocl_sub(double a, double b);
 double sf64_ocl_mul(double a, double b);
@@ -995,6 +999,8 @@ double sf64_native_recip(double x);
 double sf64_native_divide(double x, double y);
 double sf64_native_powr(double x, double y);
 
+#endif /* SOFT_FP64_HAS_OCL_ABI */
+
 /** @} */ // ocl
 
 /**
@@ -1005,8 +1011,9 @@ double sf64_native_powr(double x, double y);
  * `SOFT_FP64_FENV=tls` (the default). When built with
  * `SOFT_FP64_FENV=disabled`, the raise-sites are compiled out and all
  * `sf64_fe_*` entries become zero-cost no-ops / no-op queries (getall
- * returns 0). Bit assignments match `<fenv.h>` conventions so consumers
- * can bridge to glibc fenv without a lookup table.
+ * returns 0). Flag values are a stable library-owned bit mask. They are not
+ * guaranteed to equal the platform's `<fenv.h>` constants; translate flags
+ * explicitly when bridging to a host floating-point environment.
  * @{
  */
 
@@ -1079,9 +1086,9 @@ void sf64_fe_restore(const sf64_fe_state_t* in);
  *    The TLS surface compiles to no-op stubs (returns 0 / no-op writes)
  *    so consumers that reference both surfaces still link, but the TLS
  *    flag bag does not exist on the device.
- *  - `SOFT_FP64_FENV=disabled`: both surfaces compile to no-ops, every
- *    raise site in the library is DCE'd, and the `_ex` symbols are not
- *    emitted into the archive.
+ *  - `SOFT_FP64_FENV=disabled`: arithmetic raise sites compile to no-ops and
+ *    both numerical surfaces remain linkable. The `_ex` state accessors can
+ *    still read and write caller-owned state, but operations add no flags.
  *
  * Bit layout of @ref sf64_fe_state_t::flags is the same as the TLS
  * surface — reuses the `SF64_FE_*` enum values.

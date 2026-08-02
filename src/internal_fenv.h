@@ -169,10 +169,8 @@ sf64_internal_fe_raise_bits(unsigned /*bits*/) noexcept {
 // Empty accumulator in disabled mode: methods are no-ops, the class
 // has no state, and passing it by reference through the helper tree
 // DCEs completely under -O2+. The state-pointer constructor exists so
-// the `_ex` surface can compile in this mode (it just drops the flag
-// regardless of the pointer); CMake leaves the `_ex` symbols out of
-// the archive entirely under `disabled` so this branch is normally
-// unreachable, but the constructor stays available for completeness.
+// the `_ex` surface remains ABI-stable in this mode while dropping flags
+// regardless of the pointer.
 class sf64_internal_fe_acc {
   public:
     SF64_ALWAYS_INLINE sf64_internal_fe_acc() noexcept = default;

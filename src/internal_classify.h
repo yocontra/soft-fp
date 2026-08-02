@@ -49,7 +49,7 @@ namespace soft_fp64::internal {
 // emits "visibility attribute ignored" on static functions and we run
 // with -Werror, so we drop the redundant attribute and rely on `static`
 // alone — same end-state on both compilers.
-#define SF64_INTERNAL_INLINE static inline __attribute__((always_inline))
+#define SF64_INTERNAL_INLINE static SF64_ALWAYS_INLINE
 
 // Larger bodies (ldexp / frexp) keep `inline` only — let the compiler
 // decide whether to inline. Forcing `always_inline` inflates callers

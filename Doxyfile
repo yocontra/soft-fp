@@ -1,4 +1,4 @@
-# Doxygen configuration for soft-fp64.
+# Doxygen configuration for soft-fp.
 #
 # Generated HTML lives under docs/html. The `docs` job in
 # .github/workflows/ci.yml builds it as a CI artifact with
@@ -7,9 +7,9 @@
 # Keep options minimal — every flag below is either a Doxygen non-default
 # that shapes the public surface, or a CI discipline toggle.
 
-PROJECT_NAME           = "soft-fp64"
-PROJECT_BRIEF          = "Pure-software IEEE-754 binary64 library"
-PROJECT_NUMBER         =
+PROJECT_NAME           = "soft-fp"
+PROJECT_BRIEF          = "Pure-software IEEE-754 binary64, binary128, and binary256 libraries"
+PROJECT_NUMBER         = 2.0.0
 OUTPUT_DIRECTORY       = docs
 
 # Language & input layout

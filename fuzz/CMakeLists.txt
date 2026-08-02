@@ -12,28 +12,6 @@
 # libFuzzer/sanitizers, so it is always built when the fuzz subdir is
 # added.
 
-# ---- Exhaustive f32<->f64 round-trip (no fuzzer, plain ctest) ----------
-#
-# Always built when this subdir is active. Uses only the host compiler
-# (no libFuzzer / ASan dependency). Runs as ctest `test_exhaustive_f32`.
-
-add_executable(exhaustive_f32_f64_roundtrip
-    exhaustive_f32_f64_roundtrip.cpp)
-target_link_libraries(exhaustive_f32_f64_roundtrip PRIVATE soft_fp64::soft_fp64)
-target_compile_options(exhaustive_f32_f64_roundtrip PRIVATE
-    -O2
-    -ffp-contract=off
-    -fno-math-errno
-    -fno-trapping-math)
-
-# Register as a ctest.  Time budget: well under 10 minutes on M-series.
-# Mark as a long-running test so devs can exclude it via `-LE long`.
-add_test(NAME test_exhaustive_f32_roundtrip
-         COMMAND exhaustive_f32_f64_roundtrip)
-set_tests_properties(test_exhaustive_f32_roundtrip PROPERTIES
-    TIMEOUT 900
-    LABELS "long;exhaustive")
-
 # ---- libFuzzer per-op targets ------------------------------------------
 #
 # libFuzzer is built-in to clang; requires `-fsanitize=fuzzer,address,undefined`
@@ -74,6 +52,14 @@ if(CMAKE_CXX_COMPILER_ID STREQUAL "Clang"
     _sf64_add_fuzz_target(fuzz_fcmp          fuzz_fcmp.cpp)
     _sf64_add_fuzz_target(fuzz_remainder     fuzz_remainder.cpp)
     _sf64_add_fuzz_target(fuzz_narrow_int    fuzz_narrow_int.cpp)
+    if(TARGET soft_fp128)
+        _sf64_add_fuzz_target(fuzz_fp128 fuzz_fp128.cpp)
+        target_link_libraries(fuzz_fp128 PRIVATE soft_fp::fp128)
+    endif()
+    if(TARGET soft_fp256)
+        _sf64_add_fuzz_target(fuzz_fp256 fuzz_fp256.cpp)
+        target_link_libraries(fuzz_fp256 PRIVATE soft_fp::fp256)
+    endif()
 
     # fuzz_rounding_modes links MPFR as the bit-exact oracle for the
     # sf64_*_r surface. Mirror the pkg-config / find_library discovery
@@ -127,7 +113,8 @@ if(CMAKE_CXX_COMPILER_ID STREQUAL "Clang"
 
     message(STATUS "soft_fp64: libFuzzer targets enabled "
                    "(fuzz_arithmetic, fuzz_sqrt_fma, fuzz_transcendental, "
-                   "fuzz_fcmp, fuzz_remainder, fuzz_narrow_int, fuzz_rounding_modes)")
+                   "fuzz_fcmp, fuzz_remainder, fuzz_narrow_int, fuzz_rounding_modes, "
+                   "fuzz_fp128, fuzz_fp256)")
 else()
     message(WARNING
         "SOFT_FP64_BUILD_FUZZ=ON but the active C++ compiler is "

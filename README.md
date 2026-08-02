@@ -5,24 +5,31 @@ for any target without hardware floating-point of the relevant width.
 
 The repository hosts a suite of integer-only IEEE-754 implementations that
 share build infrastructure, oracle setup (Berkeley TestFloat 3e + MPFR),
-benchmark harness, and ABI conventions. Currently shipping:
+benchmark harness, and ABI conventions. Version 2 ships:
 
 - **`soft-fp64`** — the full binary64 surface (arithmetic, compare, full
   width-matrix conversions, sqrt, fma, rounding, classification,
   transcendentals). Static archive `libsoft_fp64.a`, public `sf64_*`
-  C ABI, `find_package(soft_fp64)`. The rest of this README is about
-  this library — see precision tables, install paths, and integration
-  notes below.
+  C ABI, and `find_package(soft_fp64)` compatibility package.
+- **`soft-fp128`** — IEEE binary128 (1/15/112) core arithmetic,
+  conversions, all five rounding modes, explicit exception state,
+  remainder, square root, fused multiply-add, rounding-to-integer,
+  comparison, and classification.
+- **`soft-fp256`** — IEEE binary256 (1/19/236) core arithmetic with the
+  same rounding and exception model, conversions, remainder, square root,
+  fused multiply-add, rounding-to-integer, comparison, and classification.
 
-Planned (not yet implemented; see `TODO.md`):
+`find_package(soft_fp)` and `soft_fp::soft_fp` select the complete suite.
+The legacy binary64 package remains supported. Wider formats are enabled by
+default and can be disabled with `SOFT_FP_BUILD_FP128=OFF` or
+`SOFT_FP_BUILD_FP256=OFF`.
 
-- **`soft-fp128`** — same playbook extended to 113-bit binary128. Sibling
-  static archive `libsoft_fp128.a`, public `sf128_*` C ABI,
-  `find_package(soft_fp128)`. Decoupled release cadence from `soft-fp64`.
-
-The README, CMakeLists, `find_package` name, `sf64_*` ABI prefix, and
-`include/soft_fp64/` header path are stable surface for the fp64 library
-and won't shift when fp128 lands alongside.
+The 2.0 wider-format contract is the complete IEEE core (arithmetic,
+conversion, rounding, comparison, classification, flags, remainder, sqrt,
+and FMA). Binary64 additionally provides the documented libm/transcendental
+surface. Binary128/binary256 transcendental symbols are intentionally absent
+until they have format-specific algorithms and MPFR accuracy gates; the
+project does not ship host-libm forwarders or placeholder approximations.
 
 ## What soft-fp64 does
 
@@ -36,7 +43,12 @@ traps, silently truncates to `float`, or refuses to lower the code at all.
 IEEE-754 binary64 surface, built entirely on 32/64-bit integer bit
 operations. There is no hidden dependency on the host FPU. Any frontend
 that can emit a call to an `extern "C"` symbol can get correct `double`
-behavior on a device without a hardware fp64 unit.
+behavior on a device without a hardware fp64 unit. The public binary64 ABI
+uses `double` as a 64-bit bit-pattern carrier, so the compiler/IR must still
+be able to represent the binary64 type in signatures. No emitted arithmetic
+instruction depends on hardware fp64; CI verifies optimized LLVM IR. Source
+languages with no binary64 type at all (notably WGSL) need a frontend adapter
+that maps their integer-pair representation to these helpers during lowering.
 
 ## Where this is useful
 
@@ -49,9 +61,10 @@ when the hardware lacks an fp64 unit. Examples include:
 - **`torch.float64` on MPS.** PyTorch's MPS backend errors on fp64.
   A dispatch path backed by this library would produce a working
   (slow) tensor.
-- **WebGPU.** WGSL has no `f64`. Cross-compiling `sf64_*` to a
-  linkable WGSL/SPIR-V module gives Tint / Naga something to lower
-  fp64 ops against.
+- **WebGPU compiler runtimes.** WGSL has no `f64`, so direct source-level
+  calls are impossible. A Tint/Naga-style lowering pass can represent values
+  as integer pairs and map generated binary64 operations to this library's
+  integer-only IR before final WGSL/SPIR-V emission.
 - **Mesa drivers without fp64.** Lima, Panfrost, older Freedreno,
   LLVMpipe-on-WASM reject fp64 OpenCL kernels. Mesa's in-tree
   softfloat covers arithmetic but not transcendentals; this library
@@ -86,7 +99,14 @@ Three supported integration paths. Pick whichever matches your build.
 
 ### 1. CMake `find_package`
 
-After `cmake --install`, consumers use:
+After `cmake --install`, consumers of all formats use:
+
+```cmake
+find_package(soft_fp 2 CONFIG REQUIRED)
+target_link_libraries(my_app PRIVATE soft_fp::soft_fp)
+```
+
+Binary64-only compatibility:
 
 ```cmake
 find_package(soft_fp64 REQUIRED)
@@ -99,7 +119,7 @@ No install step; vendor the source tree:
 
 ```cmake
 add_subdirectory(extern/soft-fp64)
-target_link_libraries(my_app PRIVATE soft_fp64::soft_fp64)
+target_link_libraries(my_app PRIVATE soft_fp::soft_fp)
 ```
 
 ### 3. pkg-config
@@ -126,8 +146,25 @@ int main(void) {
 }
 ```
 
-Every symbol is a pure `extern "C"` function with no global state. See
-`include/soft_fp64/soft_f64.h` for the full API (Doxygen-annotated).
+For all formats, include `soft_fp/soft_fp.h`. Values wider than binary64 use
+explicit, endian-independent word structs (`sf128_t` and `sf256_t`), so their
+ABI never depends on `__float128` or `__uint128_t`.
+
+```c
+#include "soft_fp/soft_fp.h"
+
+sf128_t q = sf128_from_f64(1.5);
+sf128_t q2 = sf128_mul(q, q);
+
+sf256_t o = sf256_from_i64(2);
+sf64_fe_state_t flags = {0};
+sf256_t root = sf256_sqrt_r_ex(SF64_RNE, o, &flags);
+```
+
+Every public symbol uses a stable `extern "C"` ABI. The only mutable state is
+the documented thread-local exception environment; `_ex` entry points use
+caller-owned sticky flags for runtimes that cannot provide TLS. See the
+headers under `include/` for the full API.
 
 ### Integrating under a different symbol name
 
@@ -219,63 +256,26 @@ Across the full double range, 1.1's `logk_dd` DD-Horner rewrite brings
 measured worst-case `sf64_pow` inside U10 (≤4 ULP); the shipped U35
 tier remains the gated ceiling.
 
-### Report-only (NOT CI-gated)
-
-There are currently no parked precision regimes. The previous
+The previous
 `sf64_lgamma` zero-crossing caveat on `(0.5, 3)` was closed by
-zero-centered Taylor branches in `src/sleef/sleef_stubs.cpp` (DD-Horner
+zero-centered Taylor branches in `src/sleef/sleef_special.cpp` (DD-Horner
 on the `log Γ(1+z)` and `log Γ(2+z)` series, DLMF §5.7.3, with windows
 `|x-1| ≤ 0.25` and `|x-2| ≤ 0.5`); the sweep graduated to
 `tests/mpfr/test_mpfr_diff.cpp` at `GAMMA` tier.
 
-"Bit-exact" means every output matches the host FPU's round-to-nearest-even
-result in every bit, for every tested input — including every signed-zero,
-subnormal, NaN, and infinity edge case.
+"Bit-exact" means every output matches an independent IEEE oracle in every
+bit for the tested corpus, including signed zeros, subnormals, NaNs, and
+infinities. It does not imply that finite testing proves every possible input;
+the exhaustive and randomized oracle scopes are stated explicitly above.
 
 ## Performance
 
-Self-contained microbench from `bench/bench_soft_fp64.cpp` against
-`bench/baseline.json`.
-
-| op | ns/op | Mops/sec |
-|----|-------|----------|
-| add | 10.9 | 91.8 |
-| sub | 11.1 | 89.8 |
-| mul | 5.2 | 192.7 |
-| div | 16.9 | 59.3 |
-| fma | 17.9 | 55.8 |
-| sqrt | 123.6 | 8.1 |
-| rsqrt | 142.3 | 7.0 |
-| from_i32 | 1.2 | 842.8 |
-| to_i32 | 4.9 | 204.7 |
-| floor | 6.5 | 153.2 |
-| ceil | 6.4 | 156.7 |
-| trunc | 1.2 | 843.7 |
-| rint | 5.6 | 177.4 |
-| fcmp_oeq | 1.9 | 528.6 |
-| sin | 446.5 | 2.2 |
-| cos | 524.7 | 1.9 |
-| tan | 626.5 | 1.6 |
-| asin | 374.2 | 2.7 |
-| acos | 392.6 | 2.5 |
-| atan | 644.5 | 1.6 |
-| atan2 | 709.5 | 1.4 |
-| sinh | 494.6 | 2.0 |
-| cosh | 521.2 | 1.9 |
-| tanh | 310.1 | 3.2 |
-| asinh | 758.0 | 1.3 |
-| acosh | 706.8 | 1.4 |
-| atanh | 570.3 | 1.8 |
-| exp | 256.5 | 3.9 |
-| exp2 | 274.6 | 3.6 |
-| expm1 | 758.0 | 1.3 |
-| log | 472.1 | 2.1 |
-| log2 | 465.1 | 2.1 |
-| log1p | 333.5 | 3.0 |
-| pow | 1324.2 | 0.8 |
-| cbrt | 1109.0 | 0.9 |
-
-Hardware: Apple M-class, macOS, Release build, `-ffp-contract=off`.
+The self-contained harness in `bench/bench_soft_fp64.cpp` measures every
+public fp64 operation. Performance depends strongly on the compiler and
+target, so this document does not publish portable timing claims. The
+committed `bench/baseline.json` is an Apple M-series CI regression baseline,
+not a cross-platform benchmark result. See `bench/README.md` for reproducible
+build, measurement, comparison, and baseline-update instructions.
 
 ### Comparative bench
 
@@ -289,20 +289,30 @@ Informational — not a regression gate.
 
 ## Testing
 
-The oracle stack runs at four depths, each stricter than the last:
+The default suite combines complementary independent checks:
 
-1. **Host FPU + random sweeps** — every op is cross-checked bit-for-bit
-   against the host's native `double` across edge corpora plus 10⁴ random
-   inputs. See `tests/test_arithmetic_exact.cpp`,
-   `tests/test_convert_widths.cpp`, `tests/test_compare_all_predicates.cpp`,
-   `tests/test_rounding_edges.cpp`, `tests/test_sqrt_fma_exact.cpp`.
-2. **Berkeley TestFloat vectors** — the canonical IEEE-754 conformance
-   corpus, replayed through `sf64_*`. See `tests/testfloat/`.
-3. **MPFR 200-bit differential** — every transcendental is compared against
-   a 200-bit MPFR reference for ULP measurement. See `tests/mpfr/` and
-   `tests/test_transcendental_1ulp.cpp`.
-4. **libFuzzer + exhaustive round-trip** — nightly CI fuzzes each op and
-   exhaustively round-trips every `float ↔ double` value. See `fuzz/`.
+1. **Binary64 exactness** — edge corpora and randomized sweeps cover core
+   arithmetic, conversions, all 16 comparison predicates, rounding, square
+   root, and FMA. Berkeley TestFloat 3e contributes 38,783,837 generated
+   vectors across every rounding mode, including exception flags.
+2. **Binary64 transcendental accuracy** — a 200-bit MPFR oracle gates every
+   published ULP contract, with dedicated sweeps for difficult regions such
+   as reduction boundaries, poles, deep tails, and zero crossings.
+3. **Binary128 and binary256 core exactness** — deterministic boundary suites
+   cover encodings, special values, conversions, flags, and rounding. MPFR
+   differential tests exercise every core arithmetic operation in all five
+   rounding modes at the destination precision, with higher-precision source
+   operands. Binary128 also has thread-isolation coverage.
+4. **Structural checks** — the C11 consumer test includes the unified public
+   surface, the ABI manifest rejects missing or leaked backend symbols, and an
+   optimized LLVM-IR audit rejects host floating-point arithmetic in every
+   production source.
+5. **Long-running checks** — scheduled CI runs sanitizer-backed libFuzzer
+   targets for all three formats and exhaustively round-trips all 2^32
+   binary32 bit patterns through binary64.
+
+See `tests/`, `tests/testfloat/`, `tests/mpfr/`, and `fuzz/` for the concrete
+corpora and harnesses.
 
 ## Rounding modes
 
@@ -314,7 +324,7 @@ IEEE-754 §4.3):
 ```c
 #include "soft_fp64/soft_f64.h"
 
-double a = sf64_add_r(SF64_RTZ, 1.0, std::ldexp(1.0, -53));  // round toward zero
+double a = sf64_add_r(SF64_RTZ, 1.0, 0x1p-53);               // round toward zero
 int32_t i = sf64_to_i32_r(SF64_RUP, 1.5);                    // 2
 double r = sf64_rint_r(SF64_RDN, -0.5);                       // -1.0
 ```
@@ -343,9 +353,10 @@ sf64_fe_save(&saved);                     // snapshot
 sf64_fe_restore(&saved);                  // roll back
 ```
 
-Flag storage is per-thread (`thread_local`); bit positions match
-`<fenv.h>` conventions so consumers can bridge to glibc fenv without a
-lookup table. Build option `SOFT_FP64_FENV`:
+Flag storage is per-thread (`thread_local`). `SF64_FE_*` values form a stable
+project-local bitmask; they are not guaranteed to equal any platform's
+`<fenv.h>` constants, so bridges must map them by name. Build option
+`SOFT_FP64_FENV`:
 
 - `tls` (default on hosted builds) — thread-local accumulator.
 - `disabled` — every raise-site compiles out and every `sf64_fe_*` entry
@@ -361,9 +372,9 @@ cmake -S . -B build                                # default: tls
 ```
 
 Full-corpus flag parity is gated by `tests/testfloat/run_testfloat.cpp`
-against Berkeley SoftFloat's `fl2` column (7.16M vectors,
-`-tininessbefore`, `-exact`). sNaN-input rows go through the same flag
-gate; payload/sign policy is pinned separately by `tests/test_snan_payload.cpp`.
+against Berkeley SoftFloat's `fl2` column (`-tininessbefore`, `-exact`).
+sNaN-input rows go through the same flag gate; payload/sign policy is pinned
+separately by `tests/test_snan_payload.cpp`.
 
 ## Non-goals
 
@@ -378,8 +389,25 @@ cmake --build build --parallel
 ctest --test-dir build -V
 ```
 
-Tests cross-check every soft-fp64 op against the oracle stack described
-above.
+Binary128 and binary256 are built by default. Common configuration switches:
+
+```bash
+cmake -B build \
+  -DSOFT_FP_BUILD_FP128=ON \
+  -DSOFT_FP_BUILD_FP256=ON \
+  -DSOFT_FP64_BUILD_TESTS=ON \
+  -DSOFT_FP64_WERROR=ON
+```
+
+`SOFT_FP64_BUILD_EXHAUSTIVE`, `SOFT_FP64_BUILD_FUZZ`, and
+`SOFT_FP64_BUILD_BENCH` enable the long exhaustive test, sanitizer fuzz
+targets, and microbenchmarks respectively. Test and install rules default on
+only when this is the top-level project, so `add_subdirectory` consumers do
+not inherit project-only work.
+
+The remaining non-blocking roadmap—wider transcendentals, conversion-matrix
+extensions, wider benchmarks, and additional target coverage—is tracked in
+[`TODO.md`](TODO.md).
 
 ## License + attribution
 

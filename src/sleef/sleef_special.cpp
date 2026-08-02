@@ -670,16 +670,19 @@ extern "C" SF64_SLEEF_NOINLINE double sf64_lgamma_r(double x, int* sign) {
     soft_fp64::sleef::sf64_internal_fe_acc fe;
 
     if (sign)
-        *sign = 1;
+        *sign = 0;
 
     if (isnan_(x))
         return qNaN();
     if (isinf_(x)) {
         // SLEEF returns +inf for both +/-inf - sign=+1 by libm convention.
+        if (sign)
+            *sign = 1;
         return kInf;
     }
     if (lt_(x, 0.0) && is_int(x)) {
-        // Pole: lgamma -> +inf.
+        // Pole: lgamma -> +inf and the sign is undefined by the mathematical
+        // function. The public contract uses zero for that sentinel.
         return kInf;
     }
     if (eq_(x, 0.0)) {

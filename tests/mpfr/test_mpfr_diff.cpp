@@ -14,16 +14,11 @@
 //   U35  (tan/sinh/asinh/pow edge/...)        ≤ 8    ULP
 //   GAMMA (reserved — currently unused on shipped surface)  ≤ 1024 ULP
 //   (post-1.1: erf/erfc/tgamma/lgamma moved to U10 after the SLEEF u1
-//    port in src/sleef/sleef_stubs.cpp)
-// A sweep either passes its spec band and fails ctest on a regression, or
-// it lives in tests/experimental/ (report-only, not part of the release
-// correctness claim).
-//
+//    port in src/sleef/sleef_special.cpp)
 // Input ranges mirror the validated domains used by test_transcendental_1ulp
 // where applicable. Where MPFR supports a tighter oracle (e.g. *pi variants)
-// we also run the corresponding sweep. Known-buggy input regions surfaced
-// by early exploratory MPFR runs are documented inline with a TODO so a
-// future sf64 fix can widen the sweep.
+// we also run the corresponding sweep. Every registered range is enforcing;
+// there is no report-only experimental suite.
 //
 // The `ulp_diff` helper is copied here rather than factored to a shared
 // header so the oracle stays self-contained in tests/mpfr/.
@@ -1407,7 +1402,7 @@ int main() {
     // (xerf_u1, xerfc_u15, xtgamma_u1, xlgamma_u1) using the existing DD
     // primitives. Measured max_ulp = 1 across the gated sweeps below
     // (vs MPFR @ 200 bits). The Horner-vs-Estrin tradeoff documented in
-    // src/sleef/sleef_stubs.cpp may add ≤ a few ULP under future
+    // src/sleef/sleef_special.cpp may add ≤ a few ULP under future
     // recompilations; U10 (≤4 ULP) leaves comfortable headroom.
     results.push_back(
         sweep1_uniform("erf", U10, [](double x) { return sf64_erf(x); }, mpfr_erf, -5.0, 5.0));

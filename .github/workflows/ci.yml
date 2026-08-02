@@ -58,7 +58,7 @@ jobs:
             compiler: default
     runs-on: ${{ matrix.os }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
 
       - name: Install MPFR + GMP (macOS)
         if: startsWith(matrix.os, 'macos-')
@@ -124,7 +124,7 @@ jobs:
       CC: clang
       CXX: clang++
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
 
       - name: Install MPFR + GMP
         run: |
@@ -145,49 +145,20 @@ jobs:
       - name: Test
         run: ctest --test-dir build-fenv-off -V --output-on-failure
 
-  # ---------------------------------------------------------------------------
-  # 1c. Portable 64x64->128 multiply build + ctest.
-  #
-  # `sf64_fma` forms a 53x53 -> 106-bit product via the `mul64x64_to_128`
-  # primitive in src/internal.h. By default that primitive uses the
-  # compiler's native `__uint128_t`; defining `SF64_FORCE_PORTABLE_U128`
-  # forces the schoolbook fallback (four 32x32 -> 64 partial products,
-  # carry-propagated to the high/low 64-bit halves) instead. This cell
-  # keeps the portable path linked, exercised, and bit-for-bit identical
-  # to the native path against the full ctest tree (TestFloat fma vectors
-  # and MPFR transcendental sweeps both transit `sf64_fma`, so any
-  # divergence surfaces here at vector granularity).
-  #
-  # Ubuntu 24.04 + clang Release is enough — the multiply primitive is
-  # architecture-independent integer code, so one cell suffices.
-  # ---------------------------------------------------------------------------
-  build-test-portable-u128:
-    name: build-test (portable u128 mul)
-    runs-on: ubuntu-24.04
-    env:
-      CC: clang
-      CXX: clang++
+  # MSVC is a supported compiler for the production libraries. Oracle tools
+  # are Unix-oriented, so this cell builds and installs the complete suite;
+  # correctness remains covered by the cross-compiler oracle matrix above.
+  build-msvc:
+    name: build-install (Windows, MSVC)
+    runs-on: windows-2025
     steps:
-      - uses: actions/checkout@v4
-
-      - name: Install MPFR + GMP
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y libmpfr-dev libgmp-dev
-
-      - name: Configure (portable u128 mul)
-        run: |
-          cmake -B build-portable-u128 -G "Unix Makefiles" \
-            -DCMAKE_BUILD_TYPE=Release \
-            -DCMAKE_C_COMPILER=clang \
-            -DCMAKE_CXX_COMPILER=clang++ \
-            -DCMAKE_CXX_FLAGS=-DSF64_FORCE_PORTABLE_U128=1
-
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+      - name: Configure
+        run: cmake -S . -B build -DSOFT_FP64_BUILD_TESTS=OFF -DSOFT_FP64_WERROR=ON
       - name: Build
-        run: cmake --build build-portable-u128 --parallel
-
-      - name: Test
-        run: ctest --test-dir build-portable-u128 -V --output-on-failure
+        run: cmake --build build --config Release --parallel
+      - name: Install
+        run: cmake --install build --config Release --prefix build/install
 
   # ---------------------------------------------------------------------------
   # 1d. SOFT_FP64_FENV=explicit build + ctest.
@@ -207,7 +178,7 @@ jobs:
       CC: clang
       CXX: clang++
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
 
       - name: Install MPFR + GMP
         run: |
@@ -252,7 +223,7 @@ jobs:
       CC: clang
       CXX: clang++
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
 
       - name: Install MPFR + GMP
         run: |
@@ -288,7 +259,7 @@ jobs:
       CC: clang
       CXX: clang++
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
 
       - name: Install MPFR + GMP
         run: |
@@ -327,7 +298,7 @@ jobs:
       ASAN_OPTIONS: "halt_on_error=1:abort_on_error=1:detect_leaks=0"
       UBSAN_OPTIONS: "halt_on_error=1:print_stacktrace=1"
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
 
       - name: Install MPFR + GMP
         run: |
@@ -360,7 +331,7 @@ jobs:
       CC: clang
       CXX: clang++
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
 
       - name: Install MPFR + GMP
         run: |
@@ -374,6 +345,7 @@ jobs:
             -DCMAKE_C_COMPILER=clang \
             -DCMAKE_CXX_COMPILER=clang++ \
             -DSOFT_FP64_BUILD_FUZZ=ON \
+            -DSOFT_FP64_BUILD_EXHAUSTIVE=ON \
             -DSOFT_FP64_WERROR=OFF
 
       - name: Build
@@ -398,6 +370,9 @@ jobs:
             exit 1
           fi
 
+      - name: Exhaustive binary32 round-trip
+        run: ctest --test-dir build-fuzz -R test_exhaustive_f32_roundtrip -V --output-on-failure
+
   # ---------------------------------------------------------------------------
   # 4. Coverage (lcov, fail < 85% line coverage).
   # ---------------------------------------------------------------------------
@@ -413,7 +388,7 @@ jobs:
       CC: gcc
       CXX: g++
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
 
       - name: Install MPFR + GMP + lcov
         run: |
@@ -454,7 +429,7 @@ jobs:
           awk -v p="$pct" 'BEGIN { if (p+0 < 85.0) { print "coverage " p "% < 85% gate"; exit 1 } }'
 
       - name: Upload coverage artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
           name: coverage-lcov
           path: coverage.cleaned
@@ -474,7 +449,7 @@ jobs:
     if: github.event_name == 'pull_request'
     runs-on: macos-14
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
 
       - name: Install MPFR + GMP
         run: brew install mpfr gmp
@@ -499,7 +474,7 @@ jobs:
 
       - name: Upload bench JSON
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
           name: bench-current
           path: current.json
@@ -512,7 +487,7 @@ jobs:
     name: install smoke
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
 
       - name: Install MPFR + GMP
         run: |
@@ -564,7 +539,7 @@ jobs:
       # `.pre-commit-config.yaml` together.
       PREK_VERSION: '0.3.10'
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
       - name: Install prek ${{ env.PREK_VERSION }}
         # pipx is preinstalled on ubuntu-24.04 runners.
         run: pipx install "prek==${PREK_VERSION}"
@@ -585,7 +560,7 @@ jobs:
     if: github.event_name == 'workflow_dispatch'
     runs-on: macos-14
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
 
       - name: Install MPFR + GMP
         run: brew install mpfr gmp
@@ -606,7 +581,7 @@ jobs:
         run: build-compare/bench/bench_compare --min-time-ms=500 --json > compare.json
 
       - name: Upload comparative JSON
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
           name: bench-compare-${{ github.sha }}
           path: compare.json
@@ -615,16 +590,15 @@ jobs:
   # ---------------------------------------------------------------------------
   # 9. Doxygen HTML build. Runs on every push/PR with WARN_AS_ERROR so doc
   # drift (missing @param, unbalanced @{ ... @}, dangling @ref) is caught at
-  # the same tier as clang-format. Pinned to doxygen 1.12.0+ (Ubuntu 24.04
-  # apt ships 1.9.8 which predates some of the relaxed Markdown-in-brief
-  # handling; the `sudo apt install` below lands 1.9.8 — if that changes
-  # the Doxyfile, bump to a manual install).
+  # the same tier as clang-format. The minimal Doxyfile is compatible with
+  # Ubuntu 24.04's distro Doxygen; CI therefore tests the exact package it
+  # installs below instead of claiming a different pinned version.
   # ---------------------------------------------------------------------------
   docs:
     name: docs (doxygen)
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
 
       - name: Install Doxygen
         run: |
@@ -635,7 +609,7 @@ jobs:
         run: doxygen Doxyfile
 
       - name: Upload docs artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
           name: docs-html
           path: docs/html

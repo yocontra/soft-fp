@@ -1494,9 +1494,8 @@ int main() {
                                          {"-tininessbefore"}));
 #endif
 
-    // mulAdd has a hardcoded minimum of 6,133,248 vectors at level 1. The
-    // runtime is ~15-30s depending on machine. Pass -n explicitly so we
-    // document the chosen sample size.
+    // mulAdd has a hardcoded minimum of 6,133,248 vectors at level 1. Pass
+    // -n explicitly so the chosen sample size remains a reviewable contract.
     run("f64_mulAdd", run_f64_mulAdd(6133248));
 
     // ---- per-mode sf64_*_r surface --------------------------------------

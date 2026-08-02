@@ -93,12 +93,10 @@ extern "C" void sf64_fe_restore(const sf64_fe_state_t* in) {
 }
 
 // ---------------------------------------------------------------------------
-// Caller-state surface (`_ex`). Present under `tls` and `explicit`; the
-// `disabled` build hides it (and the underlying raise sites are no-ops
-// regardless).
+// Caller-state surface (`_ex`). Present in every build for ABI stability.
+// In disabled mode these accessors still manipulate the caller-owned state;
+// arithmetic operations simply never add flags to it.
 // ---------------------------------------------------------------------------
-
-#if SOFT_FP64_FENV_MODE == 1 || SOFT_FP64_FENV_MODE == 2
 
 extern "C" unsigned sf64_fe_getall_ex(const sf64_fe_state_t* state) {
     return state != nullptr ? state->flags : 0u;
@@ -133,5 +131,3 @@ extern "C" void sf64_fe_restore_ex(sf64_fe_state_t* state, const sf64_fe_state_t
         return;
     state->flags = in->flags;
 }
-
-#endif // SOFT_FP64_FENV_MODE == 1 || SOFT_FP64_FENV_MODE == 2

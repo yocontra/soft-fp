@@ -14,7 +14,7 @@
 //       sf64_asinh / sf64_acosh / sf64_atanh
 //
 // π-scaled inverse trig (asinpi/acospi/atanpi/atan2pi) and rootn live in
-// sleef_stubs.cpp.
+// sleef_special.cpp.
 //
 // Tightened to SLEEF `xatan/xasin/xacos/xpow/xcbrt/xsinh/xcosh/xtanh/
 // xasinh/xacosh/xatanh` pattern — minimax poly + DD composition for pow /
@@ -179,8 +179,6 @@ extern "C" SF64_SLEEF_NOINLINE double sf64_remainder(double x, double y) {
     return remainder_impl(x, y, fe);
 }
 
-#if SOFT_FP64_FENV_MODE == 1 || SOFT_FP64_FENV_MODE == 2
-
 extern "C" SF64_SLEEF_NOINLINE double sf64_fmod_ex(double x, double y, sf64_fe_state_t* state) {
     soft_fp64::sleef::sf64_internal_fe_acc fe{state};
     return fmod_impl(x, y, fe);
@@ -191,8 +189,6 @@ extern "C" SF64_SLEEF_NOINLINE double sf64_remainder_ex(double x, double y,
     soft_fp64::sleef::sf64_internal_fe_acc fe{state};
     return remainder_impl(x, y, fe);
 }
-
-#endif
 
 // ========================================================================
 // TU-local DD helpers and minimax coefficients
@@ -370,7 +366,7 @@ sf64_internal_expk_dd(DD d, sf64_internal_fe_acc& fe) {
 // reduction as expk_dd above (q = round((d.hi+d.lo)*log2(e)); s = d - q·ln2)
 // but the final ldexp is applied componentwise to keep the result in DD.
 //
-// Hidden visibility — used by sleef_stubs.cpp's gamma/erfc ports, never
+// Hidden visibility — used by sleef_special.cpp's gamma/erfc ports, never
 // part of the public ABI. The deep-underflow guard (`d.x < -1000 ⇒ 0`)
 // matches upstream so the caller's expk2(d)·u multiplication doesn't
 // produce a denormal trail.

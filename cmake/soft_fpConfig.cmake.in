@@ -1,0 +1,29 @@
+@PACKAGE_INIT@
+
+# The legacy package owns the exported concrete targets. Load it, then expose
+# stable unified names without duplicating installed target definitions.
+include(CMakeFindDependencyMacro)
+find_dependency(soft_fp64 CONFIG)
+
+if(NOT TARGET soft_fp::fp64)
+    add_library(soft_fp::fp64 INTERFACE IMPORTED)
+    set_property(TARGET soft_fp::fp64 PROPERTY
+        INTERFACE_LINK_LIBRARIES soft_fp64::soft_fp64)
+endif()
+if(TARGET soft_fp64::soft_fp128 AND NOT TARGET soft_fp::fp128)
+    add_library(soft_fp::fp128 INTERFACE IMPORTED)
+    set_property(TARGET soft_fp::fp128 PROPERTY
+        INTERFACE_LINK_LIBRARIES soft_fp64::soft_fp128)
+endif()
+if(TARGET soft_fp64::soft_fp256 AND NOT TARGET soft_fp::fp256)
+    add_library(soft_fp::fp256 INTERFACE IMPORTED)
+    set_property(TARGET soft_fp::fp256 PROPERTY
+        INTERFACE_LINK_LIBRARIES soft_fp64::soft_fp256)
+endif()
+if(NOT TARGET soft_fp::soft_fp)
+    add_library(soft_fp::soft_fp INTERFACE IMPORTED)
+    set_property(TARGET soft_fp::soft_fp PROPERTY
+        INTERFACE_LINK_LIBRARIES soft_fp64::soft_fp)
+endif()
+
+check_required_components(soft_fp)

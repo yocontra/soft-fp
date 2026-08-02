@@ -2,7 +2,7 @@
 //
 // Private header shared across the per-family SLEEF TUs
 // (`sleef_exp_log.cpp`, `sleef_trig.cpp`, `sleef_inv_hyp_pow.cpp`,
-// `sleef_stubs.cpp`). Holds constants and helpers used in more than one
+// `sleef_special.cpp`). Holds constants and helpers used in more than one
 // translation unit, plus forward decls for the `sf64_internal_exp_core` /
 // `sf64_internal_log_core` cores that pow / hyperbolic / cbrt pull in.
 // The cores are hidden-visibility on ELF/Mach-O — they must never escape
@@ -43,7 +43,7 @@ inline constexpr double kL2L = 0.28235290563031577122588448175013436025525412068
 inline constexpr double kR_LN2 =
     1.442695040888963407359924681001892137426645954152985934135449406931;
 
-inline constexpr double kInf = __builtin_huge_val();
+inline const double kInf = from_bits(0x7FF0000000000000ULL);
 
 // ---- canonical quiet NaN -----------------------------------------------
 
@@ -122,7 +122,7 @@ sf64_internal_log_core(double d, sf64_internal_fe_acc& fe);
 // exp(d) as a plain double with the DD accuracy carried through reduction.
 //
 // These are the SLEEF 3.6 `logk` and `expk` families, lifted out of their
-// former anonymous namespace in `sleef_inv_hyp_pow.cpp` so `sleef_stubs.cpp`
+// former anonymous namespace in `sleef_inv_hyp_pow.cpp` so `sleef_special.cpp`
 // (erfc deep tail, tgamma near-overflow) can build its exp argument in DD
 // too. Hidden visibility so they stay out of the public ABI — the `nm -g`
 // CI check on `install-smoke` depends on this.
@@ -132,7 +132,7 @@ sf64_internal_logk_dd(double d, sf64_internal_fe_acc& fe);
 sf64_internal_expk_dd(DD d, sf64_internal_fe_acc& fe);
 
 // DD-returning variants used by the SLEEF 3.6 `xerf_u1`, `xerfc_u15`,
-// `xtgamma_u1`, `xlgamma_u1` ports in `sleef_stubs.cpp`.
+// `xtgamma_u1`, `xlgamma_u1` ports in `sleef_special.cpp`.
 //
 // `expk2_dd(d)` = exp(d) carried as DD (target ≈ 2^-106 relative). The
 // erfc_u15 deep-tail and tgamma_u1 reconstruction both need exp(arg)

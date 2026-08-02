@@ -231,10 +231,7 @@ int main() {
     // We are intentionally loose-ish compared to SLEEF upstream because we
     // use a degree-reduced polynomial + single-double arithmetic in places.
 
-    // Tolerance bands — match the task spec buckets exactly. Sweeps either
-    // pass their spec tier, or their problematic input range is excised
-    // and exercised instead by the report-only harness in
-    // tests/experimental/.
+    // Tolerance bands — match the documented MPFR buckets exactly.
     //   U10   — functions that land ≤1 ULP on sweep (most), including
     //           erf / tgamma / lgamma after the post-1.1 SLEEF u1 port.
     //   U35   — functions that land ≤2 ULP (tan, sinh, tanh, asinh, pow,
@@ -244,7 +241,7 @@ int main() {
     constexpr int64_t U10 = 4;
     constexpr int64_t U35 = 8;
     constexpr int64_t GAMMA = 1024;
-    (void)GAMMA; // currently unused — left for forward-compat / experimental.
+    (void)GAMMA; // MPFR owns the lgamma zero-crossing GAMMA-tier gate.
 
     std::printf("\n[u10 sweeps]\n");
 
@@ -466,9 +463,9 @@ int main() {
 
         // lgamma gated on x ≥ 3 (zero-free subrange). post-1.1: SLEEF u1
         // port; worst ~3 ULP vs host libm. The zero-crossings at x=1, x=2
-        // remain U10-tight against MPFR (see experimental_precision.cpp
-        // — currently report-only) but the ULP ratio is undefined as
-        // |lgamma| → 0, so the gated sweep stays on the zero-free range.
+        // are gated against MPFR at GAMMA tier because the ULP ratio is
+        // unbounded as |lgamma| → 0; this host-libm sweep stays on the
+        // zero-free range.
         Stats sl;
         LCG rng2(0x1DEFFULL);
         for (int i = 0; i < 10000; ++i) {
@@ -647,8 +644,9 @@ int main() {
         //   x negative, not integer →
         //       floor(-x) even      → sign = -1  (e.g. -0.5, -2.5, -4.5…)
         //       floor(-x) odd       → sign = +1  (e.g. -1.5, -3.5, -5.5…)
-        //   x negative integer      → pole, sign = +1 by libm convention
-        //   x = ±inf / NaN          → sign = +1
+        //   x negative integer      → pole, sign = 0 (documented sentinel)
+        //   x = ±inf                → sign = +1
+        //   x = NaN                 → sign = 0 (documented sentinel)
         //
         // Mid-range magnitude tolerance: 1e-14 vs sf64_lgamma.
         struct Probe {
@@ -670,8 +668,11 @@ int main() {
             {"-2.5", -2.5, -1},
             {"-3.5", -3.5, +1},
             {"-4.5", -4.5, -1},
+            {"-1-pole", -1.0, 0},
+            {"-2-pole", -2.0, 0},
             {"-inf", -std::numeric_limits<double>::infinity(), +1},
             {"+inf", std::numeric_limits<double>::infinity(), +1},
+            {"nan", std::numeric_limits<double>::quiet_NaN(), 0},
         };
         int fails = 0;
         for (const auto& p : probes) {

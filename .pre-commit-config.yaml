@@ -55,8 +55,9 @@ repos:
   # CONTRIBUTING.md. Scans every .cpp/.h under src/ (no carve-out) for
   # libm calls, cmath/fenv includes, __builtin_ FP intrinsics,
   # int↔double casts, fp-contract escape pragmas, and raw FP
-  # comparisons (literal-RHS as well as DD-field / sf64_fabs / dd_to_d
-  # variable-RHS variants).
+  # comparisons. It also compiles every production C++ TU to optimized LLVM
+  # IR and rejects actual floating arithmetic/comparison/conversion opcodes,
+  # catching optimizer pattern matching that source scans cannot observe.
   # Runs on every commit that touches src/ and in CI via prek.
   - repo: local
     hooks:
