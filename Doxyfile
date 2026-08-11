@@ -13,7 +13,7 @@ PROJECT_NUMBER         = 2.0.0
 OUTPUT_DIRECTORY       = docs
 
 # Language & input layout
-INPUT                  = include README.md
+INPUT                  = include README.md SIMD.md
 FILE_PATTERNS          = *.h *.md
 RECURSIVE              = YES
 USE_MDFILE_AS_MAINPAGE = README.md

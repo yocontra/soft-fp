@@ -33,6 +33,12 @@ the same repository, build, install, and package surface.
   header and `find_package(soft_fp 2 CONFIG)` package.
 - ABI-manifest enforcement that checks every public declaration against the
   installed archives and rejects leaked Berkeley SoftFloat backend state.
+- A C++17 SIMD/SIMT integration header with arbitrary fixed lane counts,
+  allocation-free load/store and transform helpers, per-lane explicit
+  exception state, and binary128/binary256 structure-of-arrays word planes.
+- `SIMD.md` defining the portable lane guarantees, fenv configuration,
+  aliasing rules, wider-format layouts, and the boundary between the portable
+  implementation and target-specific native vector kernels.
 
 ### Changed
 
@@ -86,6 +92,8 @@ the same repository, build, install, and package surface.
   production source, C11/ABI/install consumers, alternate fenv/OpenCL/FTZ
   configurations, sanitizer fuzz targets, documentation checks, and the
   performance regression gate.
+- Passed lane-container and word-plane round trips across binary64, binary128,
+  and binary256 in the default, explicit-fenv, and disabled-fenv test matrices.
 
 ## [1.3.0] — 2026-05-12
 

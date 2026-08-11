@@ -411,8 +411,21 @@ only when this is the top-level project, so `add_subdirectory` consumers do
 not inherit project-only work.
 
 The remaining non-blocking roadmap—wider transcendentals, conversion-matrix
-extensions, wider benchmarks, and additional target coverage—is tracked in
-the repository's `TODO.md`.
+extensions, native ISA kernels, wider benchmarks, and additional target
+coverage—is tracked in the repository's `TODO.md`.
+
+## SIMD and SIMT
+
+The C++17 header `soft_fp/simd.h` provides allocation-free fixed-width packs,
+lane-wise transforms for every scalar operation, per-lane explicit exception
+state, and structure-of-arrays word planes for binary128 and binary256. It is
+ISA-neutral and preserves the scalar bit/rounding contract lane by lane.
+
+Use `SOFT_FP64_FENV=explicit` when every lane needs independent IEEE-754 flags,
+or `SOFT_FP64_FENV=disabled` when flags are not needed. The default TLS mode is
+thread-safe but its shared sticky flag reduction may inhibit compiler auto-
+vectorization. See `SIMD.md` for examples, data-layout guarantees, and the
+boundary between a SIMD-friendly API and target-specific native vector code.
 
 ## Release provenance
 

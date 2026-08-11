@@ -44,8 +44,12 @@ int main() {
   double r = sf64_add(1.0, 2.0);
   sf128_t q = sf128_add(sf128_from_i32(1), sf128_from_i32(2));
   sf256_t o = sf256_add(sf256_from_i64(1), sf256_from_i64(2));
+  soft_fp::simd::pack<double, 4> lanes{{1.0, 2.0, 3.0, 4.0}};
+  auto doubled = soft_fp::simd::transform(lanes, lanes, sf64_add);
   std::printf("%.1f\n", r);
-  return (r == 3.0 && sf128_to_i32(q) == 3 && sf256_to_i64(o) == 3) ? 0 : 1;
+  return (r == 3.0 && sf128_to_i32(q) == 3 && sf256_to_i64(o) == 3 && doubled[3] == 8.0)
+             ? 0
+             : 1;
 }
 CONSUMER_CPP
 

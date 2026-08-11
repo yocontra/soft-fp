@@ -12,3 +12,7 @@
 #if SOFT_FP_HAS_FP256
 #include "soft_fp256/soft_f256.h"
 #endif
+
+#ifdef __cplusplus
+#include "soft_fp/simd.h"
+#endif

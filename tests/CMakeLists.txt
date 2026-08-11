@@ -19,6 +19,11 @@ add_test(NAME test_c_api COMMAND test_c_api)
 add_test(NAME test_abi_manifest
     COMMAND bash "${PROJECT_SOURCE_DIR}/scripts/check_abi_manifest.sh" "${PROJECT_BINARY_DIR}")
 
+add_executable(test_simd test_simd.cpp)
+target_link_libraries(test_simd PRIVATE soft_fp::soft_fp)
+target_compile_options(test_simd PRIVATE ${SF64_TEST_FP_OPTIONS})
+add_test(NAME test_simd COMMAND test_simd)
+
 if(TARGET soft_fp128)
     add_executable(test_fp128 test_fp128.cpp)
     target_link_libraries(test_fp128 PRIVATE soft_fp::fp128)

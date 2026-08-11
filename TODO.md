@@ -70,6 +70,27 @@ Acceptance criteria:
   software-floating-point implementations, clearly separating informational
   comparisons from regression gates.
 
+## Native SIMD kernels
+
+The 2.0 lane API and wider-format word planes provide a stable, tested
+integration contract. Target-specific kernels remain performance extensions;
+the portable scalar implementation remains the correctness reference.
+
+Acceptance criteria:
+
+- Add opt-in backends only after measuring representative workloads on their
+  target ISA; initial candidates are AVX2/AVX-512, Arm SVE, and RISC-V V.
+- Keep runtime dispatch outside the scalar ABI and provide a deterministic
+  portable fallback for every lane count and alignment.
+- Remove binary128's hidden backend-state vectorization barrier by passing
+  rounding and exception state explicitly through an audited backend, without
+  exposing Berkeley SoftFloat symbols or weakening thread isolation.
+- Validate every vector lane's result bits and flags against the existing
+  TestFloat/MPFR oracles, including mixed normal/special-case packs and
+  divergent iteration counts.
+- Add generated-code inspection and repeated throughput/latency regression
+  gates; do not equate a vector-shaped API with proof of native instructions.
+
 ## Portability and release coverage
 
 Broaden validation beyond the current macOS arm64, Linux x86-64, and Windows
