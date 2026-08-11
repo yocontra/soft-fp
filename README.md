@@ -447,3 +447,6 @@ respective licenses; full attribution in [`NOTICE`](NOTICE).
 - Transcendentals (sin/cos/tan/asin/acos/atan/exp/log/pow/erf/tgamma/…)
   ported from **SLEEF 3.6** `sleefinline_purec_scalar.h` + scalar sources
   (Boost-1.0).
+- The production binary128 core uses an audited, symbol-isolated subset of
+  **Berkeley SoftFloat 3e** (BSD-3-Clause); TestFloat 3e remains an independent
+  conformance oracle.

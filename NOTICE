@@ -1,4 +1,4 @@
-soft-fp64
+soft-fp
 Copyright (c) 2026 Eric Schoffstall
 
 Licensed under the MIT License. See LICENSE for details.
@@ -61,19 +61,19 @@ remainder. The purec-scalar variant compiles against plain `double` plus
 `fma` and `sqrt`, so the SLEEF sources drop straight onto the `sf64_*` ABI.
 
 --------------------------------------------------------------------------------
-Berkeley SoftFloat 3e — design reference
+Berkeley SoftFloat 3e — binary128 backend and design reference
 --------------------------------------------------------------------------------
 
     http://www.jhauser.us/arithmetic/SoftFloat.html
     Copyright (c) The Regents of the University of California.
     Licensed under the BSD 3-Clause License
 
-Consulted for design (round-and-pack structure, canonical NaN payload
-handling, conversion-matrix ABI shape). Additionally vendored under
-tests/testfloat/vendor/berkeley-softfloat-3/ for use as a differential
-test oracle; it is linked only into the test binary, never into the
-runtime `soft_fp64` library. Original COPYING preserved in the vendor
-subtree.
+An audited binary128 dependency closure from the vendored source implements
+the production `soft_fp128` core. Its public names and mutable state are
+prefixed and hidden inside that archive, so applications can safely link a
+separate SoftFloat build. The same vendored source is also used as a
+differential test oracle for binary64. Original COPYING is preserved in the
+vendor subtree and installed as `SoftFloat-LICENSE`.
 
 --------------------------------------------------------------------------------
 Berkeley TestFloat 3e — test oracle

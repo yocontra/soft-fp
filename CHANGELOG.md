@@ -80,6 +80,8 @@ the same repository, build, install, and package surface.
 - Made the reentrancy harness request an ASan-safe worker stack on Darwin,
   whose default secondary-thread stack is too small for instrumented Debug
   transcendental frames.
+- Corrected the top-level attribution to identify Berkeley SoftFloat as the
+  production binary128 backend as well as an oracle dependency.
 
 ### Validation
 
