@@ -9,6 +9,14 @@ See `README.md` for the full precision table.
 
 ## [Unreleased]
 
+No unreleased changes.
+
+## [2.0.0] — 2026-08-11
+
+First suite-wide release of `soft-fp`. Version 2 retains the complete
+binary64 API and adds production binary128 and binary256 IEEE-754 cores in
+the same repository, build, install, and package surface.
+
 ### Added
 
 - Unified `soft_fp` 2.0 package and umbrella target, retaining the binary64
@@ -20,6 +28,24 @@ See `README.md` for the full precision table.
   deterministic source manifests, and an emitted-LLVM-IR host-FP gate.
 - MPFR differential suites and sanitizer fuzz targets for binary128 and
   binary256, plus binary128 thread-isolation coverage.
+- Stable `soft_fp::fp64`, `soft_fp::fp128`, `soft_fp::fp256`, and
+  `soft_fp::soft_fp` CMake targets, plus the `soft_fp/soft_fp.h` umbrella
+  header and `find_package(soft_fp 2 CONFIG)` package.
+- ABI-manifest enforcement that checks every public declaration against the
+  installed archives and rejects leaked Berkeley SoftFloat backend state.
+
+### Changed
+
+- Renamed the top-level CMake project to `soft_fp` and set its package version
+  to 2.0.0. The legacy `soft_fp64` CMake package, target, header paths,
+  archive, and `sf64_*` C ABI remain supported.
+- Replaced the native 128-bit binary64 helper dependency with portable
+  two-limb integer arithmetic and a base-2^32 division implementation.
+- Made the production source install manifest explicit and installed the
+  SLEEF and Berkeley SoftFloat license and attribution files.
+- Replaced the misleading `sleef_stubs.cpp` filename with
+  `sleef_special.cpp`; these are real, accuracy-gated binary64 special
+  functions, not placeholders.
 
 ### Fixed
 
@@ -36,8 +62,32 @@ See `README.md` for the full precision table.
   integer-conversion documentation.
 - Removed the empty experimental test and made exhaustive binary32 round-trip
   coverage independent of libFuzzer.
+- Corrected GNU attribute placement, guarded compiler-specific visibility and
+  TLS attributes, and fixed shift-count narrowing so GCC and MSVC warning-as-
+  error builds compile cleanly.
+- Corrected Berkeley SoftFloat helper linkage so binary128 works in Debug,
+  sanitizer, and coverage builds rather than only when optimization happened
+  to inline every helper.
+- Removed undefined float-to-unsigned conversion from the narrow-integer fuzz
+  harness and replaced the platform-libm remainder oracle with MPFR for
+  extreme exponent-gap and subnormal cases.
+- Made the reentrancy harness request an ASan-safe worker stack on Darwin,
+  whose default secondary-thread stack is too small for instrumented Debug
+  transcendental frames.
 
-## [1.3.0] — 2026-05-11
+### Validation
+
+- Passed 38,783,837 Berkeley TestFloat 3e vectors across the binary64 core,
+  including result bits and exception flags.
+- Passed independent MPFR differential suites for binary64 transcendental
+  accuracy and every binary128/binary256 core operation in all five rounding
+  modes.
+- Passed the optimized LLVM-IR no-host-floating-point audit across every
+  production source, C11/ABI/install consumers, alternate fenv/OpenCL/FTZ
+  configurations, sanitizer fuzz targets, documentation checks, and the
+  performance regression gate.
+
+## [1.3.0] — 2026-05-12
 
 Additive release on top of 1.2. Adds the OpenCL C compatibility ABI,
 the OpenCL `native_*` spelling tier, explicit-state remainder variants,
@@ -124,7 +174,7 @@ and an opt-in IEEE 754 §6.2.3 sNaN payload propagation policy.
   `quiet` mode it falls back to `qNaN()` exactly. INVALID raise
   on sNaN remains in place at both call sites.
 
-## [1.2.0] — 2026-04-26
+## [1.2.0] — 2026-04-27
 
 Substantial release. Closes the AGX recursion-hang surfaced by
 AdaptiveCpp's Metal pipeline, pulls all the open `Post-1.1` numerical
@@ -318,7 +368,8 @@ and surfaces `soft_fp64_SOURCE_DIR` / `soft_fp64_SLEEF_SOURCE_DIR` /
   and the `include/soft_fp64/` header path is unchanged. Only the
   GitHub URL moves.
 
-[Unreleased]: https://github.com/yocontra/soft-fp/compare/v1.3.0...HEAD
+[Unreleased]: https://github.com/yocontra/soft-fp/compare/v2.0.0...HEAD
+[2.0.0]: https://github.com/yocontra/soft-fp/releases/tag/v2.0.0
 [1.3.0]: https://github.com/yocontra/soft-fp/releases/tag/v1.3.0
 [1.2.0]: https://github.com/yocontra/soft-fp/releases/tag/v1.2.0
 
@@ -565,7 +616,7 @@ and silent (non-raising) exception behavior when `SOFT_FP64_FENV=disabled`.
 
 [1.1.0]: https://github.com/yocontra/soft-fp/releases/tag/v1.1.0
 
-## [1.0.0] — unreleased
+## [1.0.0] — 2026-04-21
 
 First stable release. Ships a complete `sf64_*` IEEE-754 binary64 surface
 built entirely on 32/64-bit integer ops (no host-FPU dependency) plus the

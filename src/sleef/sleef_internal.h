@@ -112,10 +112,8 @@ namespace soft_fp64::sleef {
 // reference so the flag raise never rotates through TLS inside the hot
 // transcendental inner loops. The SLEEF public entry that invoked them
 // flushes once at return.
-[[gnu::visibility("hidden")]] SF64_SLEEF_NOINLINE double
-sf64_internal_exp_core(double d, sf64_internal_fe_acc& fe);
-[[gnu::visibility("hidden")]] SF64_SLEEF_NOINLINE double
-sf64_internal_log_core(double d, sf64_internal_fe_acc& fe);
+SF64_HIDDEN SF64_SLEEF_NOINLINE double sf64_internal_exp_core(double d, sf64_internal_fe_acc& fe);
+SF64_HIDDEN SF64_SLEEF_NOINLINE double sf64_internal_log_core(double d, sf64_internal_fe_acc& fe);
 
 // DD-carrying exp/log cores. `logk_dd(d)` returns log|d| as a DD pair
 // (target ≈ 2^-106 relative); `expk_dd(d)` takes a DD argument and returns
@@ -126,10 +124,8 @@ sf64_internal_log_core(double d, sf64_internal_fe_acc& fe);
 // (erfc deep tail, tgamma near-overflow) can build its exp argument in DD
 // too. Hidden visibility so they stay out of the public ABI — the `nm -g`
 // CI check on `install-smoke` depends on this.
-[[gnu::visibility("hidden")]] SF64_SLEEF_NOINLINE DD
-sf64_internal_logk_dd(double d, sf64_internal_fe_acc& fe);
-[[gnu::visibility("hidden")]] SF64_SLEEF_NOINLINE double
-sf64_internal_expk_dd(DD d, sf64_internal_fe_acc& fe);
+SF64_HIDDEN SF64_SLEEF_NOINLINE DD sf64_internal_logk_dd(double d, sf64_internal_fe_acc& fe);
+SF64_HIDDEN SF64_SLEEF_NOINLINE double sf64_internal_expk_dd(DD d, sf64_internal_fe_acc& fe);
 
 // DD-returning variants used by the SLEEF 3.6 `xerf_u1`, `xerfc_u15`,
 // `xtgamma_u1`, `xlgamma_u1` ports in `sleef_special.cpp`.
@@ -147,11 +143,8 @@ sf64_internal_expk_dd(DD d, sf64_internal_fe_acc& fe);
 // DD precision through the multiplication with the denominator sweep.
 //
 // All three are hidden-visibility — they are NOT public ABI.
-[[gnu::visibility("hidden")]] SF64_SLEEF_NOINLINE DD
-sf64_internal_expk2_dd(DD d, sf64_internal_fe_acc& fe);
-[[gnu::visibility("hidden")]] SF64_SLEEF_NOINLINE DD
-sf64_internal_logk2_dd(DD d, sf64_internal_fe_acc& fe);
-[[gnu::visibility("hidden")]] SF64_SLEEF_NOINLINE DD
-sf64_internal_sinpik_dd(double d, sf64_internal_fe_acc& fe);
+SF64_HIDDEN SF64_SLEEF_NOINLINE DD sf64_internal_expk2_dd(DD d, sf64_internal_fe_acc& fe);
+SF64_HIDDEN SF64_SLEEF_NOINLINE DD sf64_internal_logk2_dd(DD d, sf64_internal_fe_acc& fe);
+SF64_HIDDEN SF64_SLEEF_NOINLINE DD sf64_internal_sinpik_dd(double d, sf64_internal_fe_acc& fe);
 
 } // namespace soft_fp64::sleef

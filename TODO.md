@@ -86,9 +86,6 @@ Acceptance criteria:
 - Exercise installed `soft_fp`, `soft_fp64`, `soft_fp128`, and `soft_fp256`
   packages from both C and C++ downstream projects; add pkg-config metadata for
   the wider libraries if that integration path is retained.
-- Produce and test relocatable 2.x release archives, generate API documentation,
-  verify installed license/attribution files, and document the release signing
-  and provenance process.
 
 ## Maintenance rules
 

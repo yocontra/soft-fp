@@ -1,7 +1,12 @@
 # soft-fp
 
+[![release](https://img.shields.io/github/v/release/yocontra/soft-fp)](https://github.com/yocontra/soft-fp/releases/latest)
+[![CI](https://github.com/yocontra/soft-fp/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/yocontra/soft-fp/actions/workflows/ci.yml)
+
 Portable, bit-exact IEEE-754 soft-float libraries in pure integer code —
 for any target without hardware floating-point of the relevant width.
+
+Current stable release: **2.0.0** (2026-08-11).
 
 The repository hosts a suite of integer-only IEEE-754 implementations that
 share build infrastructure, oracle setup (Berkeley TestFloat 3e + MPFR),
@@ -407,7 +412,13 @@ not inherit project-only work.
 
 The remaining non-blocking roadmap—wider transcendentals, conversion-matrix
 extensions, wider benchmarks, and additional target coverage—is tracked in
-[`TODO.md`](TODO.md).
+the repository's `TODO.md`.
+
+## Release provenance
+
+Each GitHub release publishes an annotated version tag, reproducible tagged-
+source archives, a SHA-256 manifest, generated API documentation, and an SPDX
+SBOM. See `RELEASING.md` for the release and verification procedure.
 
 ## License + attribution
 

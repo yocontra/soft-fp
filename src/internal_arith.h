@@ -796,7 +796,7 @@ SF64_ALWAYS_INLINE double sf64_internal_fma_rne(double a, double b, double c,
     const int64_t prod_shift = prod_exp - E;
     U128 prod_frame;
     if (prod_shift >= 0) {
-        prod_frame = prod << prod_shift;
+        prod_frame = prod << static_cast<int>(prod_shift);
     } else {
         const int rshift = static_cast<int>(-prod_shift);
         if (rshift >= 128) {
@@ -813,7 +813,7 @@ SF64_ALWAYS_INLINE double sf64_internal_fma_rne(double a, double b, double c,
     const int64_t c_shift = (expc - 52) - E;
     U128 c_frame;
     if (c_shift >= 0) {
-        c_frame = U128{mc} << c_shift;
+        c_frame = U128{mc} << static_cast<int>(c_shift);
     } else {
         const int rshift = static_cast<int>(-c_shift);
         if (rshift >= 128) {

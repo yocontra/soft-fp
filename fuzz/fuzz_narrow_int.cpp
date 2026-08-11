@@ -31,6 +31,12 @@ double bits_to_double(uint64_t bits) {
     return d;
 }
 
+uint64_t double_to_bits(double value) {
+    uint64_t bits;
+    std::memcpy(&bits, &value, sizeof(bits));
+    return bits;
+}
+
 [[noreturn]] void fuzz_fail(const char*) {
     __builtin_trap();
 }
@@ -65,7 +71,7 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t* data, size_t size) {
         const double oracle = static_cast<double>(v);
         if (got != oracle)
             fuzz_fail("sf64_from_i8 != static_cast");
-        sink ^= static_cast<uint64_t>(got);
+        sink ^= double_to_bits(got);
         break;
     }
     case 1: { // sf64_from_i16
@@ -74,7 +80,7 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t* data, size_t size) {
         const double oracle = static_cast<double>(v);
         if (got != oracle)
             fuzz_fail("sf64_from_i16 != static_cast");
-        sink ^= static_cast<uint64_t>(got);
+        sink ^= double_to_bits(got);
         break;
     }
     case 2: { // sf64_from_u8
@@ -83,7 +89,7 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t* data, size_t size) {
         const double oracle = static_cast<double>(v);
         if (got != oracle)
             fuzz_fail("sf64_from_u8 != static_cast");
-        sink ^= static_cast<uint64_t>(got);
+        sink ^= double_to_bits(got);
         break;
     }
     case 3: { // sf64_from_u16
@@ -92,7 +98,7 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t* data, size_t size) {
         const double oracle = static_cast<double>(v);
         if (got != oracle)
             fuzz_fail("sf64_from_u16 != static_cast");
-        sink ^= static_cast<uint64_t>(got);
+        sink ^= double_to_bits(got);
         break;
     }
     case 4: { // sf64_to_i8

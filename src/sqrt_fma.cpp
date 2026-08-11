@@ -692,7 +692,7 @@ SF64_ALWAYS_INLINE double fma_r_impl(double a, double b, double c, sf64_rounding
         // left shift — guaranteed safe since frame_top was chosen with 2
         // bits of headroom above prod_true_msb, so prod's MSB lands at bit
         // prod_msb_local + prod_shift <= 125.
-        prod_frame = prod << prod_shift;
+        prod_frame = prod << static_cast<int>(prod_shift);
     } else {
         const int rshift = static_cast<int>(-prod_shift);
         if (rshift >= 128) {
@@ -714,7 +714,7 @@ SF64_ALWAYS_INLINE double fma_r_impl(double a, double b, double c, sf64_rounding
         // left shift — safe because frame_top >= c_true_msb + 2 = expc + 2,
         // so E <= expc - 125, so c_shift = (expc - 52) - E <= 73 < 128,
         // and mc (53 bits) << 73 = MSB at bit 125. Fine.
-        c_frame = U128{mc} << c_shift;
+        c_frame = U128{mc} << static_cast<int>(c_shift);
     } else {
         const int rshift = static_cast<int>(-c_shift);
         if (rshift >= 128) {

@@ -6,11 +6,11 @@
 #endif
 
 #if defined(_MSC_VER)
-#define INLINE __inline
-#elif defined(__GNUC_STDC_INLINE__)
-#define INLINE inline
+#define INLINE static __inline
+#elif defined(__GNUC__) || defined(__clang__)
+#define INLINE static inline
 #else
-#define INLINE extern inline
+#define INLINE static inline
 #endif
 
 #ifndef THREAD_LOCAL

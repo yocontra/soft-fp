@@ -8,6 +8,8 @@
 #define SF64_ALWAYS_INLINE __attribute__((always_inline)) inline
 #define SF64_NOINLINE __attribute__((noinline))
 #define SF64_EXPORT __attribute__((visibility("default")))
+#define SF64_HIDDEN __attribute__((visibility("hidden")))
+#define SF64_TLS_INITIAL_EXEC __attribute__((tls_model("initial-exec")))
 #elif defined(_MSC_VER)
 #define SF64_ALWAYS_INLINE __forceinline
 #define SF64_NOINLINE __declspec(noinline)
@@ -18,10 +20,14 @@
 #else
 #define SF64_EXPORT
 #endif
+#define SF64_HIDDEN
+#define SF64_TLS_INITIAL_EXEC
 #else
 #define SF64_ALWAYS_INLINE inline
 #define SF64_NOINLINE
 #define SF64_EXPORT
+#define SF64_HIDDEN
+#define SF64_TLS_INITIAL_EXEC
 #endif
 
 // SF64_SLEEF_INLINE: separate inline marker for SLEEF's transcendental
@@ -85,13 +91,14 @@
 // wrappers whose bodies forward to sf64_*, producing infinite mutual
 // recursion that hangs the AGX command buffer (kIOGPUCommandBufferCallback
 // ErrorHang). Apply only to the four cycle-risk bodies — bodies are 1–10
-// lines of bit ops, so the optimizer cost is negligible. Clang-only:
-// GCC builds don't feed the Metal pipeline.
+// lines of bit ops, so the optimizer cost is negligible. This is deliberately
+// Clang-only: GCC builds do not feed the Metal pipeline, and GCC rejects this
+// attribute placement under -Wattributes.
 #if defined(__clang__)
 #define SF64_NO_OPT __attribute__((optnone))
 #define SF64_BITCAST_BOUNDARY SF64_ALWAYS_INLINE
 #elif defined(__GNUC__)
-#define SF64_NO_OPT __attribute__((optimize("O0")))
+#define SF64_NO_OPT
 #define SF64_BITCAST_BOUNDARY SF64_ALWAYS_INLINE
 #elif defined(_MSC_VER)
 #define SF64_NO_OPT

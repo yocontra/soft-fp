@@ -3,8 +3,9 @@
 // sf64_remainder implements IEEE-754 `remainder` (quotient rounded to
 // nearest-even). The mathematical result is exactly representable: the
 // reduction `x - n*y` is computed with a single rounding step and n is
-// chosen s.t. |r| <= |y|/2, so sf64_remainder MUST bit-match glibc's
-// `remainder(x, y)` on every finite input pair — no ULP slop allowed.
+// chosen s.t. |r| <= |y|/2. MPFR supplies an independent exact oracle;
+// platform libm is deliberately not used because some implementations lose
+// the quotient parity for extreme exponent gaps and subnormal divisors.
 //
 // Consumes 16 bytes (two f64 bit-patterns). We gate on finite inputs
 // (both operands must be finite, y != 0) because:
@@ -14,8 +15,11 @@
 
 #include <soft_fp64/soft_f64.h>
 
+#include <mpfr.h>
+
 #include <cmath>
 #include <cstdint>
+#include <cstdio>
 #include <cstring>
 
 namespace {
@@ -37,7 +41,33 @@ bool is_nan(double d) {
     return ((b >> 52) & 0x7ffu) == 0x7ffu && (b & 0x000f'ffff'ffff'ffffULL) != 0;
 }
 
-[[noreturn]] void fuzz_fail(const char*) {
+struct MpfrRemainderOracle {
+    mpfr_t x;
+    mpfr_t y;
+    mpfr_t result;
+
+    MpfrRemainderOracle() {
+        mpfr_init2(x, 53);
+        mpfr_init2(y, 53);
+        mpfr_init2(result, 53);
+    }
+
+    ~MpfrRemainderOracle() {
+        mpfr_clear(x);
+        mpfr_clear(y);
+        mpfr_clear(result);
+    }
+
+    double operator()(double a, double b) {
+        mpfr_set_d(x, a, MPFR_RNDN);
+        mpfr_set_d(y, b, MPFR_RNDN);
+        mpfr_remainder(result, x, y, MPFR_RNDN);
+        return mpfr_get_d(result, MPFR_RNDN);
+    }
+};
+
+[[noreturn]] void fuzz_fail(const char* reason) {
+    std::fprintf(stderr, "fuzz_remainder: %s\n", reason);
     __builtin_trap();
 }
 
@@ -78,21 +108,14 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t* data, size_t size) {
         return 0;
     }
 
-    // Finite non-zero y, finite x: oracle is libm `remainder`.
-    const double oracle = std::remainder(x, y);
+    // Finite non-zero y, finite x: MPFR computes the exact IEEE remainder.
+    static MpfrRemainderOracle oracle_state;
+    const double oracle = oracle_state(x, y);
 
     // Bit-exact match required. NaN-equivalence wrapper not needed because
     // neither side can be NaN here (all NaN cases returned above).
     if (double_to_bits(got) != double_to_bits(oracle)) {
-        fuzz_fail("sf64_remainder disagrees bit-exact with libm");
-    }
-
-    // Invariant: |remainder(x,y)| <= |y|/2 with equality only on ties (and
-    // then the quotient is even). We don't encode the tie-break here — the
-    // bit-exact check above already enforces it — but we can assert the
-    // magnitude bound as a cheap sanity catch.
-    if (std::fabs(got) > std::fabs(y) * 0.5 + 0x1p-1022) {
-        fuzz_fail("|remainder| > |y|/2");
+        fuzz_fail("sf64_remainder disagrees bit-exact with MPFR");
     }
 
     return 0;

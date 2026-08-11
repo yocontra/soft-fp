@@ -1615,8 +1615,7 @@ SF64_SLEEF_INLINE DD cospi_core(double d, soft_fp64::sleef::sf64_internal_fe_acc
 // reflection branch (x < 0.5) in sleef_special.cpp::sf64_tgamma /
 // sf64_lgamma. Hidden visibility — not part of the public ABI.
 namespace soft_fp64::sleef {
-[[gnu::visibility("hidden")]] SF64_SLEEF_NOINLINE DD
-sf64_internal_sinpik_dd(double d, sf64_internal_fe_acc& fe) {
+SF64_HIDDEN SF64_SLEEF_NOINLINE DD sf64_internal_sinpik_dd(double d, sf64_internal_fe_acc& fe) {
     return sinpi_core(d, fe);
 }
 } // namespace soft_fp64::sleef

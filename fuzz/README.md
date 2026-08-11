@@ -11,7 +11,7 @@ and narrow-int conversions, plus an exhaustive `f32 <-> f64` round-trip test.
 | `fuzz_sqrt_fma.cpp` | libFuzzer | `sf64_sqrt`, `sf64_fma`: NaN/Inf handling, `sqrt(x*x) ≈ |x|`. |
 | `fuzz_transcendental.cpp` | libFuzzer | sin/cos/tan/exp/log/pow: special-case handling, coarse libm agreement. |
 | `fuzz_fcmp.cpp` | libFuzzer | `sf64_fcmp(a, b, pred)` across all 16 predicates + NaN pairs. |
-| `fuzz_remainder.cpp` | libFuzzer | `sf64_remainder(x, y)` agreement with libm, Sterbenz edges. |
+| `fuzz_remainder.cpp` | libFuzzer + MPFR | Bit-exact `sf64_remainder(x, y)` agreement across the full binary64 domain. |
 | `fuzz_narrow_int.cpp` | libFuzzer | i8/i16/u8/u16 ↔ f64 conversions, saturation/rounding edges. |
 | `exhaustive_f32_f64_roundtrip.cpp` | plain ctest | Every 32-bit f32 pattern through `sf64_from_f32` → `sf64_to_f32`. |
 

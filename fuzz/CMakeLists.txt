@@ -50,7 +50,6 @@ if(CMAKE_CXX_COMPILER_ID STREQUAL "Clang"
     _sf64_add_fuzz_target(fuzz_sqrt_fma      fuzz_sqrt_fma.cpp)
     _sf64_add_fuzz_target(fuzz_transcendental fuzz_transcendental.cpp)
     _sf64_add_fuzz_target(fuzz_fcmp          fuzz_fcmp.cpp)
-    _sf64_add_fuzz_target(fuzz_remainder     fuzz_remainder.cpp)
     _sf64_add_fuzz_target(fuzz_narrow_int    fuzz_narrow_int.cpp)
     if(TARGET soft_fp128)
         _sf64_add_fuzz_target(fuzz_fp128 fuzz_fp128.cpp)
@@ -103,17 +102,21 @@ if(CMAKE_CXX_COMPILER_ID STREQUAL "Clang"
         endif()
     endif()
     if(_fuzz_mpfr_found)
+        _sf64_add_fuzz_target(fuzz_remainder fuzz_remainder.cpp)
+        target_include_directories(fuzz_remainder PRIVATE ${_fuzz_mpfr_include_dirs})
+        target_link_libraries(fuzz_remainder PRIVATE ${_fuzz_mpfr_libraries})
         _sf64_add_fuzz_target(fuzz_rounding_modes fuzz_rounding_modes.cpp)
         target_include_directories(fuzz_rounding_modes PRIVATE ${_fuzz_mpfr_include_dirs})
         target_link_libraries(fuzz_rounding_modes PRIVATE ${_fuzz_mpfr_libraries})
-        message(STATUS "soft_fp64: fuzz_rounding_modes enabled (MPFR=${_fuzz_mpfr_include_dirs})")
+        message(STATUS "soft_fp64: MPFR-backed fuzz targets enabled "
+                       "(fuzz_remainder, fuzz_rounding_modes; MPFR=${_fuzz_mpfr_include_dirs})")
     else()
-        message(STATUS "soft_fp64: fuzz_rounding_modes skipped (MPFR not found)")
+        message(STATUS "soft_fp64: MPFR-backed fuzz targets skipped (MPFR not found)")
     endif()
 
     message(STATUS "soft_fp64: libFuzzer targets enabled "
                    "(fuzz_arithmetic, fuzz_sqrt_fma, fuzz_transcendental, "
-                   "fuzz_fcmp, fuzz_remainder, fuzz_narrow_int, fuzz_rounding_modes, "
+                   "fuzz_fcmp, fuzz_narrow_int, optional MPFR-backed targets, "
                    "fuzz_fp128, fuzz_fp256)")
 else()
     message(WARNING

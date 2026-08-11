@@ -23,6 +23,10 @@
 #include <thread>
 #include <vector>
 
+#if defined(__APPLE__)
+#include <pthread.h>
+#endif
+
 namespace {
 
 constexpr int N_THREADS = 8;
@@ -99,6 +103,30 @@ bool same(const Outputs& a, const Outputs& b) {
            a.exp_ == b.exp_ && a.log_ == b.log_ && a.pow_ == b.pow_;
 }
 
+void run_worker(const std::vector<double>& xs, const Outputs& ref, std::atomic<int>& mismatches) {
+    for (int k = 0; k < N_ITERS_PER_THREAD; ++k) {
+        Outputs got;
+        run_once(xs, got);
+        if (!same(got, ref)) {
+            mismatches.fetch_add(1, std::memory_order_relaxed);
+        }
+    }
+}
+
+#if defined(__APPLE__)
+struct WorkerContext {
+    const std::vector<double>* xs;
+    const Outputs* ref;
+    std::atomic<int>* mismatches;
+};
+
+void* pthread_worker(void* opaque) {
+    const auto& context = *static_cast<WorkerContext*>(opaque);
+    run_worker(*context.xs, *context.ref, *context.mismatches);
+    return nullptr;
+}
+#endif
+
 } // namespace
 
 int main() {
@@ -108,22 +136,48 @@ int main() {
     run_once(xs, ref);
 
     std::atomic<int> mismatches{0};
+#if defined(__APPLE__)
+    // Darwin's default secondary-thread stack is only 512 KiB. Debug builds
+    // instrumented by ASan need more headroom for the deliberately broad
+    // transcendental call surface exercised here.
+    pthread_attr_t attributes;
+    if (pthread_attr_init(&attributes) != 0) {
+        std::fprintf(stderr, "reentrancy: unable to configure worker stack\n");
+        return 1;
+    }
+    if (pthread_attr_setstacksize(&attributes, 8U * 1024U * 1024U) != 0) {
+        std::fprintf(stderr, "reentrancy: unable to configure worker stack\n");
+        pthread_attr_destroy(&attributes);
+        return 1;
+    }
+    std::vector<pthread_t> workers(N_THREADS);
+    std::vector<WorkerContext> contexts(N_THREADS, WorkerContext{&xs, &ref, &mismatches});
+    int created = 0;
+    for (int t = 0; t < N_THREADS; ++t) {
+        if (pthread_create(&workers[t], &attributes, pthread_worker, &contexts[t]) != 0) {
+            std::fprintf(stderr, "reentrancy: unable to create worker %d\n", t);
+            pthread_attr_destroy(&attributes);
+            for (int i = 0; i < created; ++i) {
+                pthread_join(workers[i], nullptr);
+            }
+            return 1;
+        }
+        ++created;
+    }
+    pthread_attr_destroy(&attributes);
+    for (pthread_t worker : workers) {
+        pthread_join(worker, nullptr);
+    }
+#else
     std::vector<std::thread> workers;
     workers.reserve(N_THREADS);
     for (int t = 0; t < N_THREADS; ++t) {
-        workers.emplace_back([&xs, &ref, &mismatches] {
-            for (int k = 0; k < N_ITERS_PER_THREAD; ++k) {
-                Outputs got;
-                run_once(xs, got);
-                if (!same(got, ref)) {
-                    mismatches.fetch_add(1, std::memory_order_relaxed);
-                }
-            }
-        });
+        workers.emplace_back([&xs, &ref, &mismatches] { run_worker(xs, ref, mismatches); });
     }
     for (auto& w : workers) {
         w.join();
     }
+#endif
 
     const int m = mismatches.load();
     if (m != 0) {

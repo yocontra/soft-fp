@@ -72,6 +72,15 @@ int main() {
         SF64_CHECK_BITS(sf64_rem(-5.0, 3.0), std::fmod(-5.0, 3.0));
         SF64_CHECK_BITS(sf64_rem(5.0, -3.0), std::fmod(5.0, -3.0));
         SF64_CHECK_BITS(sf64_rem(1.0, 0.1), std::fmod(1.0, 0.1));
+
+        // Exact multiple with a 160-bit quotient and subnormal divisor. Some
+        // host libm implementations lose quotient parity here, so pin the
+        // mathematically exact signed-zero result directly (also covered by
+        // the MPFR-backed remainder fuzzer).
+        const double huge_quotient = from_bits(0x0A0000000000310AULL);
+        const double subnormal_divisor = from_bits(0x000A000000000000ULL);
+        SF64_CHECK_BITS(sf64_remainder(huge_quotient, subnormal_divisor), 0.0);
+        SF64_CHECK_BITS(sf64_remainder(-huge_quotient, subnormal_divisor), -0.0);
     }
 
     // ---- random sweep -----------------------------------------------------

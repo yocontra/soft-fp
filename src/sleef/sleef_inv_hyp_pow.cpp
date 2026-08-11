@@ -271,8 +271,7 @@ namespace soft_fp64::sleef {
 // log|d| as DD. Port of SLEEF 3.6 sleefdp.c::logk.  Hidden-visibility so the
 // symbol is usable from other SLEEF TUs (erfc/tgamma arg-reduction) without
 // joining the public ABI.
-[[gnu::visibility("hidden")]] SF64_SLEEF_NOINLINE DD
-sf64_internal_logk_dd(double d, sf64_internal_fe_acc& fe) {
+SF64_HIDDEN SF64_SLEEF_NOINLINE DD sf64_internal_logk_dd(double d, sf64_internal_fe_acc& fe) {
     int e;
     double m = sf64_frexp(d, &e);
     if (lt_(m, 0.70710678118654752440)) {
@@ -319,8 +318,7 @@ sf64_internal_logk_dd(double d, sf64_internal_fe_acc& fe) {
 //   t = s + s²·t                 // DD
 //   t = 1 + t                    // DD
 //   result = ldexp(t.hi + t.lo, q)
-[[gnu::visibility("hidden")]] SF64_SLEEF_NOINLINE double
-sf64_internal_expk_dd(DD d, sf64_internal_fe_acc& fe) {
+SF64_HIDDEN SF64_SLEEF_NOINLINE double sf64_internal_expk_dd(DD d, sf64_internal_fe_acc& fe) {
     const double d_collapsed = sf64_add(d.hi, d.lo);
 
     if (gt_(d_collapsed, 709.78271289338399673222))
@@ -370,8 +368,7 @@ sf64_internal_expk_dd(DD d, sf64_internal_fe_acc& fe) {
 // part of the public ABI. The deep-underflow guard (`d.x < -1000 ⇒ 0`)
 // matches upstream so the caller's expk2(d)·u multiplication doesn't
 // produce a denormal trail.
-[[gnu::visibility("hidden")]] SF64_SLEEF_NOINLINE DD
-sf64_internal_expk2_dd(DD d, sf64_internal_fe_acc& fe) {
+SF64_HIDDEN SF64_SLEEF_NOINLINE DD sf64_internal_expk2_dd(DD d, sf64_internal_fe_acc& fe) {
     const double d_collapsed = sf64_add(d.hi, d.lo);
     const double qf = sf64_rint(sf64_mul(d_collapsed, kR_LN2));
     const int q = sf64_to_i32(qf);
@@ -419,8 +416,7 @@ sf64_internal_expk2_dd(DD d, sf64_internal_fe_acc& fe) {
 // 2x + 2x·x²·P, then `e·ln2` is added with a DD ln2 split.
 //
 // Uses sf64_frexp/ldexp_2k to keep the scaling FPU-free.
-[[gnu::visibility("hidden")]] SF64_SLEEF_NOINLINE DD
-sf64_internal_logk2_dd(DD d, sf64_internal_fe_acc& fe) {
+SF64_HIDDEN SF64_SLEEF_NOINLINE DD sf64_internal_logk2_dd(DD d, sf64_internal_fe_acc& fe) {
     // SLEEF: e = ilogbk(d.x * (1.0/0.75)). We approximate with frexp on the
     // shifted value: frexp returns (m, e) with |m| ∈ [0.5, 1). For the SLEEF
     // form we want e such that d.hi/2^e ∈ [0.75, 1.5) approximately. The

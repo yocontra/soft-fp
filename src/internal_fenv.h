@@ -82,11 +82,9 @@ namespace soft_fp64::internal {
 // clang. The inline-thread_local form avoids the extern/wrapper dance
 // entirely; comdat dedupes the variable to a single per-thread slot in
 // the final image.
-[[gnu::visibility("hidden"),
-  gnu::tls_model("initial-exec")]] inline thread_local unsigned sf64_internal_fe_flags = 0u;
+SF64_HIDDEN SF64_TLS_INITIAL_EXEC inline thread_local unsigned sf64_internal_fe_flags = 0u;
 
-[[gnu::visibility("hidden")]] SF64_ALWAYS_INLINE void
-sf64_internal_fe_raise_bits(unsigned bits) noexcept {
+SF64_HIDDEN SF64_ALWAYS_INLINE void sf64_internal_fe_raise_bits(unsigned bits) noexcept {
     sf64_internal_fe_flags |= bits;
 }
 #define SF64_FE_RAISE(bits) (::soft_fp64::internal::sf64_internal_fe_raise_bits((bits)))
@@ -161,8 +159,7 @@ class sf64_internal_fe_acc {
     unsigned bits_ = 0;
 };
 #else
-[[gnu::visibility("hidden")]] SF64_ALWAYS_INLINE void
-sf64_internal_fe_raise_bits(unsigned /*bits*/) noexcept {
+SF64_HIDDEN SF64_ALWAYS_INLINE void sf64_internal_fe_raise_bits(unsigned /*bits*/) noexcept {
 }
 #define SF64_FE_RAISE(bits) ((void)0)
 
