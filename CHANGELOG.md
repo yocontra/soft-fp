@@ -52,6 +52,8 @@ the same repository, build, install, and package surface.
 - Replaced the misleading `sleef_stubs.cpp` filename with
   `sleef_special.cpp`; these are real, accuracy-gated binary64 special
   functions, not placeholders.
+- Updated immutable GitHub Actions pins to the Node 24-based checkout and
+  artifact actions, eliminating the deprecated Node 20 compatibility path.
 
 ### Fixed
 

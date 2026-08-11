@@ -59,7 +59,7 @@ jobs:
             compiler: default
     runs-on: ${{ matrix.os }}
     steps:
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
 
       - name: Install MPFR + GMP (macOS)
         if: startsWith(matrix.os, 'macos-')
@@ -125,7 +125,7 @@ jobs:
       CC: clang
       CXX: clang++
     steps:
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
 
       - name: Install MPFR + GMP
         run: |
@@ -153,7 +153,7 @@ jobs:
     name: build-install (Windows, MSVC)
     runs-on: windows-2025
     steps:
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
       - name: Configure
         run: cmake -S . -B build -DSOFT_FP64_BUILD_TESTS=OFF -DSOFT_FP64_WERROR=ON
       - name: Build
@@ -179,7 +179,7 @@ jobs:
       CC: clang
       CXX: clang++
     steps:
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
 
       - name: Install MPFR + GMP
         run: |
@@ -224,7 +224,7 @@ jobs:
       CC: clang
       CXX: clang++
     steps:
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
 
       - name: Install MPFR + GMP
         run: |
@@ -260,7 +260,7 @@ jobs:
       CC: clang
       CXX: clang++
     steps:
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
 
       - name: Install MPFR + GMP
         run: |
@@ -299,7 +299,7 @@ jobs:
       ASAN_OPTIONS: "halt_on_error=1:abort_on_error=1:detect_leaks=0"
       UBSAN_OPTIONS: "halt_on_error=1:print_stacktrace=1"
     steps:
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
 
       - name: Install MPFR + GMP
         run: |
@@ -332,7 +332,7 @@ jobs:
       CC: clang
       CXX: clang++
     steps:
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
 
       - name: Install MPFR + GMP
         run: |
@@ -389,7 +389,7 @@ jobs:
       CC: gcc
       CXX: g++
     steps:
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
 
       - name: Install MPFR + GMP + lcov
         run: |
@@ -430,7 +430,7 @@ jobs:
           awk -v p="$pct" 'BEGIN { if (p+0 < 85.0) { print "coverage " p "% < 85% gate"; exit 1 } }'
 
       - name: Upload coverage artifact
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
           name: coverage-lcov
           path: coverage.cleaned
@@ -450,7 +450,7 @@ jobs:
     if: github.event_name == 'pull_request'
     runs-on: macos-14
     steps:
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
 
       - name: Install MPFR + GMP
         run: brew install mpfr gmp
@@ -475,7 +475,7 @@ jobs:
 
       - name: Upload bench JSON
         if: always()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
           name: bench-current
           path: current.json
@@ -488,7 +488,7 @@ jobs:
     name: install smoke
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
 
       - name: Install MPFR + GMP
         run: |
@@ -540,7 +540,7 @@ jobs:
       # `.pre-commit-config.yaml` together.
       PREK_VERSION: '0.3.10'
     steps:
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
       - name: Install prek ${{ env.PREK_VERSION }}
         # pipx is preinstalled on ubuntu-24.04 runners.
         run: pipx install "prek==${PREK_VERSION}"
@@ -561,7 +561,7 @@ jobs:
     if: github.event_name == 'workflow_dispatch'
     runs-on: macos-14
     steps:
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
 
       - name: Install MPFR + GMP
         run: brew install mpfr gmp
@@ -582,7 +582,7 @@ jobs:
         run: build-compare/bench/bench_compare --min-time-ms=500 --json > compare.json
 
       - name: Upload comparative JSON
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
           name: bench-compare-${{ github.sha }}
           path: compare.json
@@ -599,7 +599,7 @@ jobs:
     name: docs (doxygen)
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
 
       - name: Install Doxygen
         run: |
@@ -610,7 +610,7 @@ jobs:
         run: doxygen Doxyfile
 
       - name: Upload docs artifact
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
           name: docs-html
           path: docs/html
