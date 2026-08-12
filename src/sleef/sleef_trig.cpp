@@ -80,7 +80,6 @@ using soft_fp64::sleef::signbit_;
 using soft_fp64::sleef::trunc_;
 using soft_fp64::sleef::upper;
 using soft_fp64::sleef::detail::k2_PI;
-using soft_fp64::sleef::detail::kInf;
 using soft_fp64::sleef::detail::kPI;
 using soft_fp64::sleef::detail::kPI_A;
 using soft_fp64::sleef::detail::kPI_A2;
@@ -90,6 +89,7 @@ using soft_fp64::sleef::detail::kPI_C;
 using soft_fp64::sleef::detail::kPI_D;
 using soft_fp64::sleef::detail::kTRIGRANGEMAX;
 using soft_fp64::sleef::detail::kTRIGRANGEMAX2;
+using soft_fp64::sleef::detail::positive_infinity;
 using soft_fp64::sleef::detail::qNaN;
 
 // ========================================================================
@@ -1879,7 +1879,7 @@ extern "C" SF64_SLEEF_NOINLINE double sf64_tanpi(double x) {
     if (eq_(ch, 0.0)) {
         const double sh = sf64_add(s.hi, s.lo);
         fe.flush();
-        return signbit_(sh) ? sf64_neg(kInf) : kInf;
+        return signbit_(sh) ? sf64_neg(positive_infinity()) : positive_infinity();
     }
     DD r = dddiv_dd_dd_dd(s, c);
     const double ret = sf64_add(r.hi, r.lo);

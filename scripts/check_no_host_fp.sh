@@ -125,34 +125,46 @@ scan "fp-var-compare" \
 # 9. Compile every C++ production TU to optimized LLVM IR and reject actual
 #    floating arithmetic/comparison/conversion opcodes. This catches compiler
 #    pattern matching (for example, integer sign masks reconstructed as
-#    llvm.copysign.f64), which source regexes fundamentally cannot see.
+#    llvm.copysign.f64), which source regexes fundamentally cannot see. Also
+#    reject dynamic initialization: the installed source manifest is consumed
+#    by freestanding device-library builds where global constructors and C++
+#    guard routines are unavailable.
 if command -v "${CXX:-clang++}" >/dev/null 2>&1 && "${CXX:-clang++}" --version | grep -qi clang; then
     ir_tmp=$(mktemp -d)
     trap 'rm -rf "$ir_tmp"' EXIT
     cmake -S . -B "$ir_tmp/build" -DSOFT_FP64_BUILD_TESTS=OFF \
         -DSOFT_FP64_INSTALL=OFF -DSOFT_FP64_OCL=on >/dev/null
     ir_pattern='(^|[^A-Za-z0-9_])(fadd|fsub|fmul|fdiv|frem|fcmp|sitofp|uitofp|fptosi|fptoui)([^A-Za-z0-9_]|$)|llvm\.[A-Za-z0-9_.]+\.f(32|64)'
+    dynamic_init_pattern='llvm\.global_ctors|__cxx_global_var_init|__cxa_guard_(acquire|release)'
     for f in "${files[@]}"; do
         case "$f" in *.cpp) ;; *) continue ;; esac
         out="$ir_tmp/$(printf '%s' "$f" | tr '/' '_').ll"
-        extra=()
+        # Positional parameters expand safely when empty under macOS's Bash
+        # 3.2 + `set -u`; an empty array expansion does not.
+        set --
         if [[ "$f" == src/fp128/* ]]; then
-            extra+=(
-                -Itests/testfloat/vendor/berkeley-softfloat-3/source/include
-                -Itests/testfloat/vendor/berkeley-softfloat-3/source/8086-SSE
-                -Isrc/fp128 -DSOFTFLOAT_FAST_INT64 -DSOFTFLOAT_ROUND_ODD
-                -DTHREAD_LOCAL=thread_local)
+            set -- \
+                -Itests/testfloat/vendor/berkeley-softfloat-3/source/include \
+                -Itests/testfloat/vendor/berkeley-softfloat-3/source/8086-SSE \
+                -Isrc/fp128 -DSOFTFLOAT_FAST_INT64 -DSOFTFLOAT_ROUND_ODD \
+                -DTHREAD_LOCAL=thread_local
         fi
         if [[ "$f" == src/ocl.cpp ]]; then
-            extra+=(-DSOFT_FP64_OCL_ENABLED=1 -DSOFT_FP64_FTZ_MODE=0)
+            set -- -DSOFT_FP64_OCL_ENABLED=1 -DSOFT_FP64_FTZ_MODE=0
         fi
         "${CXX:-clang++}" -std=c++17 -O3 -S -emit-llvm \
-            -Iinclude -I"$ir_tmp/build/generated" -Isrc "${extra[@]}" \
+            -Iinclude -I"$ir_tmp/build/generated" -Isrc "$@" \
             "$f" -o "$out"
         hit=$(grep -nE "$ir_pattern" "$out" 2>/dev/null || true)
         if [ -n "$hit" ]; then
             while IFS= read -r line; do
                 report "[llvm-host-fp] $f:$line"
+            done <<< "$hit"
+        fi
+        hit=$(grep -nE "$dynamic_init_pattern" "$out" 2>/dev/null || true)
+        if [ -n "$hit" ]; then
+            while IFS= read -r line; do
+                report "[llvm-dynamic-init] $f:$line"
             done <<< "$hit"
         fi
     done

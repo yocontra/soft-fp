@@ -11,6 +11,23 @@ See `README.md` for the full precision table.
 
 No unreleased changes.
 
+## [2.0.1] — 2026-08-11
+
+Patch release for freestanding device-library integration and release-gate
+portability. The numerical API and precision contracts are unchanged.
+
+### Fixed
+
+- Removed SLEEF's dynamically initialized infinity variable. Installed-source
+  consumers such as AdaptiveCpp's Metal libkernel now receive pure,
+  integer-derived bit casts without `llvm.global_ctors`, C++ guard state, or
+  runtime initialization in any SLEEF translation unit.
+- Extended the optimized LLVM IR audit to reject global constructors and C++
+  guard routines in production sources, preventing device-incompatible dynamic
+  initialization from returning.
+- Made the no-host-FP audit's optional compiler arguments safe under the system
+  Bash 3.2 shipped by supported macOS runners.
+
 ## [2.0.0] — 2026-08-11
 
 First suite-wide release of `soft-fp`. Version 2 retains the complete
@@ -380,7 +397,8 @@ and surfaces `soft_fp64_SOURCE_DIR` / `soft_fp64_SLEEF_SOURCE_DIR` /
   and the `include/soft_fp64/` header path is unchanged. Only the
   GitHub URL moves.
 
-[Unreleased]: https://github.com/yocontra/soft-fp/compare/v2.0.0...HEAD
+[Unreleased]: https://github.com/yocontra/soft-fp/compare/v2.0.1...HEAD
+[2.0.1]: https://github.com/yocontra/soft-fp/releases/tag/v2.0.1
 [2.0.0]: https://github.com/yocontra/soft-fp/releases/tag/v2.0.0
 [1.3.0]: https://github.com/yocontra/soft-fp/releases/tag/v1.3.0
 [1.2.0]: https://github.com/yocontra/soft-fp/releases/tag/v1.2.0

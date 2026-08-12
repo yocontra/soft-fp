@@ -63,12 +63,12 @@ using soft_fp64::sleef::sf64_internal_logk_dd;
 using soft_fp64::sleef::signbit_;
 using soft_fp64::sleef::detail::is_int;
 using soft_fp64::sleef::detail::is_odd_int;
-using soft_fp64::sleef::detail::kInf;
 using soft_fp64::sleef::detail::kL2L;
 using soft_fp64::sleef::detail::kL2U;
 using soft_fp64::sleef::detail::kPI;
 using soft_fp64::sleef::detail::kPI_2;
 using soft_fp64::sleef::detail::kR_LN2;
+using soft_fp64::sleef::detail::positive_infinity;
 using soft_fp64::sleef::detail::qNaN;
 
 // ========================================================================
@@ -322,7 +322,7 @@ SF64_HIDDEN SF64_SLEEF_NOINLINE double sf64_internal_expk_dd(DD d, sf64_internal
     const double d_collapsed = sf64_add(d.hi, d.lo);
 
     if (gt_(d_collapsed, 709.78271289338399673222))
-        return kInf;
+        return positive_infinity();
     if (lt_(d_collapsed, -1000.0))
         return 0.0;
 
@@ -618,7 +618,7 @@ extern "C" SF64_SLEEF_NOINLINE double sf64_pow(double x, double y) {
 
     if (eq_(x, 0.0)) {
         if (lt_(y, 0.0)) {
-            return (signbit_(x) && y_is_odd) ? sf64_neg(kInf) : kInf;
+            return (signbit_(x) && y_is_odd) ? sf64_neg(positive_infinity()) : positive_infinity();
         }
         return (signbit_(x) && y_is_odd) ? sf64_neg(0.0) : 0.0;
     }
@@ -628,14 +628,14 @@ extern "C" SF64_SLEEF_NOINLINE double sf64_pow(double x, double y) {
 
     if (isinf_(x)) {
         if (gt_(x, 0.0))
-            return gt_(y, 0.0) ? kInf : 0.0;
-        const double r = gt_(y, 0.0) ? kInf : 0.0;
+            return gt_(y, 0.0) ? positive_infinity() : 0.0;
+        const double r = gt_(y, 0.0) ? positive_infinity() : 0.0;
         return y_is_odd ? sf64_neg(r) : r;
     }
     if (isinf_(y)) {
         if (eq_(sf64_fabs(x), 1.0))
             return 1.0;
-        return (lt_(sf64_fabs(x), 1.0)) == (lt_(y, 0.0)) ? kInf : 0.0;
+        return (lt_(sf64_fabs(x), 1.0)) == (lt_(y, 0.0)) ? positive_infinity() : 0.0;
     }
 
     // DD composition: x^y = exp(y * log|x|). log in DD, y*log in DD.
@@ -787,7 +787,7 @@ extern "C" SF64_SLEEF_NOINLINE double sf64_sinh(double x) {
     // ≈ ulp(a) ≈ 1e-13, and exp's derivative near 710 is 1.6e308, which
     // amplifies that loss into ≈ 450 ULP of error at the result.
     if (gt_(a, 710.4758600739439))
-        return signbit_(x) ? sf64_neg(kInf) : kInf;
+        return signbit_(x) ? sf64_neg(positive_infinity()) : positive_infinity();
     if (gt_(a, 709.78)) {
         DD r = ddadd2_dd_d_d(a, sf64_neg(kL2U));
         r = ddadd2_dd_dd_d(r, sf64_neg(kL2L));
@@ -809,7 +809,7 @@ extern "C" SF64_SLEEF_NOINLINE double sf64_cosh(double x) {
     if (isnan_(x))
         return qNaN();
     if (isinf_(x))
-        return kInf;
+        return positive_infinity();
     const double a = sf64_fabs(x);
 
     if (lt_(a, 0.25)) {
@@ -825,7 +825,7 @@ extern "C" SF64_SLEEF_NOINLINE double sf64_cosh(double x) {
     }
 
     if (gt_(a, 709.78))
-        return kInf;
+        return positive_infinity();
     const double e1 = sf64_internal_exp_core(x, fe);
     const double e2 = sf64_internal_exp_core(sf64_neg(x), fe);
     const double r = sf64_mul(sf64_add(e1, e2), 0.5);
@@ -909,7 +909,7 @@ extern "C" SF64_SLEEF_NOINLINE double sf64_acosh(double x) {
     if (lt_(x, 1.0))
         return qNaN();
     if (isinf_(x))
-        return kInf;
+        return positive_infinity();
     if (eq_(x, 1.0))
         return 0.0;
 
@@ -940,7 +940,7 @@ extern "C" SF64_SLEEF_NOINLINE double sf64_atanh(double x) {
     if (gt_(a, 1.0))
         return qNaN();
     if (eq_(a, 1.0))
-        return signbit_(x) ? sf64_neg(kInf) : kInf;
+        return signbit_(x) ? sf64_neg(positive_infinity()) : positive_infinity();
 
     if (lt_(a, 0.5)) {
         const double t = sf64_div(sf64_mul(x, 2.0), sf64_sub(1.0, x));

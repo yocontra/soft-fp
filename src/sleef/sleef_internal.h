@@ -43,7 +43,15 @@ inline constexpr double kL2L = 0.28235290563031577122588448175013436025525412068
 inline constexpr double kR_LN2 =
     1.442695040888963407359924681001892137426645954152985934135449406931;
 
-inline const double kInf = from_bits(0x7FF0000000000000ULL);
+// Keep infinity as a function-local bit reinterpretation rather than an inline
+// `double` variable. `from_bits` is intentionally not constexpr in C++17, so
+// the variable form emits `llvm.global_ctors` plus a guard in every SLEEF TU.
+// Those runtime-initialization artifacts are invalid in freestanding device
+// libraries such as AdaptiveCpp's Metal libkernel. Always inline the pure
+// integer-derived bit cast so host and device consumers get no global state.
+SF64_ALWAYS_INLINE double positive_infinity() noexcept {
+    return soft_fp64::internal::from_bits(soft_fp64::internal::kPositiveInf);
+}
 
 // ---- canonical quiet NaN -----------------------------------------------
 

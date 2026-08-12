@@ -6,7 +6,7 @@
 Portable, bit-exact IEEE-754 soft-float libraries in pure integer code —
 for any target without hardware floating-point of the relevant width.
 
-Current stable release: **2.0.0** (2026-08-11).
+Current stable release: **2.0.1** (2026-08-11).
 
 The repository hosts a suite of integer-only IEEE-754 implementations that
 share build infrastructure, oracle setup (Berkeley TestFloat 3e + MPFR),

@@ -64,8 +64,8 @@ using soft_fp64::sleef::sf64_internal_logk_dd;
 using soft_fp64::sleef::sf64_internal_sinpik_dd;
 using soft_fp64::sleef::signbit_;
 using soft_fp64::sleef::detail::is_int;
-using soft_fp64::sleef::detail::kInf;
 using soft_fp64::sleef::detail::kPI;
+using soft_fp64::sleef::detail::positive_infinity;
 using soft_fp64::sleef::detail::qNaN;
 
 namespace {
@@ -163,15 +163,15 @@ extern "C" SF64_SLEEF_NOINLINE double sf64_rootn(double x, int n) {
         if (n > 0)
             return (signbit_(x) && n_odd) ? sf64_neg(0.0) : 0.0;
         // n < 0 -> pole at 0.
-        return (signbit_(x) && n_odd) ? sf64_neg(kInf) : kInf;
+        return (signbit_(x) && n_odd) ? sf64_neg(positive_infinity()) : positive_infinity();
     }
 
     if (isinf_(x)) {
         if (n > 0) {
             // rootn(+inf, n>0) = +inf; rootn(-inf, odd n>0) = -inf; else NaN.
             if (!signbit_(x))
-                return kInf;
-            return n_odd ? sf64_neg(kInf) : qNaN();
+                return positive_infinity();
+            return n_odd ? sf64_neg(positive_infinity()) : qNaN();
         }
         // n < 0 -> rootn(+/-inf, n<0) = +/-0 for odd n, +0 for even n.
         return (signbit_(x) && n_odd) ? sf64_neg(0.0) : 0.0;
@@ -657,10 +657,10 @@ extern "C" SF64_SLEEF_NOINLINE double sf64_tgamma(double x) {
         return qNaN();
     }
     constexpr double kDblMin = 2.2250738585072014e-308;
-    if ((eq_(x, kInf) || xnum) && ge_(x, sf64_neg(kDblMin)) &&
+    if ((eq_(x, positive_infinity()) || xnum) && ge_(x, sf64_neg(kDblMin)) &&
         (eq_(x, 0.0) || gt_(x, 200.0) || isnan_(r))) {
         fe.flush();
-        return signbit_(x) ? sf64_neg(kInf) : kInf;
+        return signbit_(x) ? sf64_neg(positive_infinity()) : positive_infinity();
     }
     fe.flush();
     return r;
@@ -678,18 +678,18 @@ extern "C" SF64_SLEEF_NOINLINE double sf64_lgamma_r(double x, int* sign) {
         // SLEEF returns +inf for both +/-inf - sign=+1 by libm convention.
         if (sign)
             *sign = 1;
-        return kInf;
+        return positive_infinity();
     }
     if (lt_(x, 0.0) && is_int(x)) {
         // Pole: lgamma -> +inf and the sign is undefined by the mathematical
         // function. The public contract uses zero for that sentinel.
-        return kInf;
+        return positive_infinity();
     }
     if (eq_(x, 0.0)) {
         // lgamma(+/-0) = +inf; sign reflects +/-0.
         if (sign)
             *sign = signbit_(x) ? -1 : 1;
-        return kInf;
+        return positive_infinity();
     }
 
     GammakRet d = gammak(x, fe);
@@ -697,7 +697,7 @@ extern "C" SF64_SLEEF_NOINLINE double sf64_lgamma_r(double x, int* sign) {
     DD ye = ddadd2_dd_dd(d.clc, sf64_internal_logk2_dd(ddabs_dd_dd(d.div), fe));
     double r = sf64_add(ye.hi, ye.lo);
     if (isinf_(x) || isnan_(r))
-        r = kInf;
+        r = positive_infinity();
 
     // Sign: positive when Gamma(x) > 0. For x > 0, sign = +1. For x < 0
     // (non-integer): sign = sign of d.div.hi (which carries the sign of

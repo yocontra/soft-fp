@@ -9,7 +9,7 @@
 
 PROJECT_NAME           = "soft-fp"
 PROJECT_BRIEF          = "Pure-software IEEE-754 binary64, binary128, and binary256 libraries"
-PROJECT_NUMBER         = 2.0.0
+PROJECT_NUMBER         = 2.0.1
 OUTPUT_DIRECTORY       = docs
 
 # Language & input layout

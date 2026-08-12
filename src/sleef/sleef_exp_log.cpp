@@ -56,10 +56,10 @@ using soft_fp64::sleef::lt_;
 using soft_fp64::sleef::mla;
 using soft_fp64::sleef::ne_;
 using soft_fp64::sleef::rint_;
-using soft_fp64::sleef::detail::kInf;
 using soft_fp64::sleef::detail::kL2L;
 using soft_fp64::sleef::detail::kL2U;
 using soft_fp64::sleef::detail::kR_LN2;
+using soft_fp64::sleef::detail::positive_infinity;
 using soft_fp64::sleef::detail::qNaN;
 
 // ========================================================================
@@ -242,7 +242,7 @@ SF64_HIDDEN SF64_SLEEF_NOINLINE double sf64_internal_exp_core(double d, sf64_int
     if (isnan_(d))
         return qNaN();
     if (gt_(d, 709.782712893383996732223))
-        return kInf; // overflow
+        return positive_infinity(); // overflow
     if (lt_(d, -1000.0))
         return 0.0; // hard underflow
 
@@ -266,7 +266,7 @@ SF64_HIDDEN SF64_SLEEF_NOINLINE double sf64_internal_exp_core(double d, sf64_int
     double r = sf64_ldexp(u, q);
 
     if (gt_(d, 709.0) && (isinf_(r) || gt_(r, 1.7976931348623157e+308)))
-        return kInf;
+        return positive_infinity();
     return r;
 }
 
@@ -277,9 +277,9 @@ SF64_HIDDEN SF64_SLEEF_NOINLINE double sf64_internal_log_core(double d, sf64_int
     if (isnan_(d) || lt_(d, 0.0))
         return qNaN();
     if (eq_(d, 0.0))
-        return sf64_neg(kInf);
+        return sf64_neg(positive_infinity());
     if (isinf_(d))
-        return kInf;
+        return positive_infinity();
 
     // Subnormal scaling: if d < 2^-1022, boost it by 2^64 to keep frexp /
     // ilogb accurate, then subtract 64 from the exponent after the poly.
@@ -341,7 +341,7 @@ extern "C" SF64_SLEEF_NOINLINE double sf64_exp2(double x) {
     if (isnan_(x))
         return qNaN();
     if (ge_(x, 1024.0))
-        return kInf;
+        return positive_infinity();
     if (le_(x, -2000.0))
         return 0.0;
 
@@ -371,7 +371,7 @@ extern "C" SF64_SLEEF_NOINLINE double sf64_exp10(double x) {
     if (isnan_(x))
         return qNaN();
     if (gt_(x, 308.25471555991671))
-        return kInf;
+        return positive_infinity();
     if (lt_(x, -350.0))
         return 0.0;
 
@@ -404,7 +404,7 @@ extern "C" SF64_SLEEF_NOINLINE double sf64_expm1(double x) {
     if (isnan_(x))
         return qNaN();
     if (gt_(x, 709.782712893383996732223))
-        return kInf;
+        return positive_infinity();
     if (lt_(x, -36.736800569677101399113302437))
         return -1.0;
 
@@ -435,9 +435,9 @@ extern "C" SF64_SLEEF_NOINLINE double sf64_log2(double x) {
     if (isnan_(x) || lt_(x, 0.0))
         return qNaN();
     if (eq_(x, 0.0))
-        return sf64_neg(kInf);
+        return sf64_neg(positive_infinity());
     if (isinf_(x))
-        return kInf;
+        return positive_infinity();
 
     constexpr double kDblMin = 2.2250738585072014e-308;
     constexpr double kScale = 4.294967296e9 * 4.294967296e9;
@@ -473,9 +473,9 @@ extern "C" SF64_SLEEF_NOINLINE double sf64_log10(double x) {
     if (isnan_(x) || lt_(x, 0.0))
         return qNaN();
     if (eq_(x, 0.0))
-        return sf64_neg(kInf);
+        return sf64_neg(positive_infinity());
     if (isinf_(x))
-        return kInf;
+        return positive_infinity();
 
     constexpr double kDblMin = 2.2250738585072014e-308;
     constexpr double kScale = 4.294967296e9 * 4.294967296e9;
@@ -511,9 +511,9 @@ extern "C" SF64_SLEEF_NOINLINE double sf64_log1p(double x) {
     if (isnan_(x) || lt_(x, -1.0))
         return qNaN();
     if (eq_(x, -1.0))
-        return sf64_neg(kInf);
+        return sf64_neg(positive_infinity());
     if (isinf_(x) && gt_(x, 0.0))
-        return kInf;
+        return positive_infinity();
 
     // dp1 = d + 1; exponent comes from dp1 * 4/3.
     const double dp1 = sf64_add(x, 1.0);

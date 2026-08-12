@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.20)
 project(soft_fp
-    VERSION 2.0.0
+    VERSION 2.0.1
     DESCRIPTION "Portable bit-exact IEEE-754 binary64, binary128, and binary256 library"
     LANGUAGES C CXX)
 
