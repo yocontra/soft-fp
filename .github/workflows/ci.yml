@@ -428,7 +428,8 @@ jobs:
   # ---------------------------------------------------------------------------
   # 5. Bench regression gate. PR-only, enforcing, macos-26.
   # The baseline records its measurement hardware and compiler. CI retains
-  # the 20% gate and 5 ns cheap-op budget below for shared-runner variation.
+  # the 20% gate and 5 ns cheap-op budget below. Exactly three 500 ms runs
+  # estimate per-operation best-case throughput; raw samples remain available.
   # Investigate drift with repeated measurements; baseline updates require
   # a reviewed hardware or intentional performance change (bench/README.md).
   # ---------------------------------------------------------------------------
@@ -451,8 +452,17 @@ jobs:
       - name: Build
         run: cmake --build build-bench --parallel --target bench_soft_fp64
 
-      - name: Run bench
-        run: build-bench/bench/bench_soft_fp64 --min-time-ms=500 --json > current.json
+      - name: Collect three benchmark samples
+        run: |
+          mkdir -p bench-samples
+          for sample in 1 2 3; do
+            build-bench/bench/bench_soft_fp64 --min-time-ms=500 --json > "bench-samples/run-${sample}.json"
+          done
+
+      - name: Select per-operation minima
+        run: |
+          python3 bench/aggregate.py bench-samples/run-1.json bench-samples/run-2.json \
+            bench-samples/run-3.json > current.json
 
       - name: Compare vs baseline
         run: |
@@ -465,7 +475,9 @@ jobs:
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
           name: bench-current
-          path: current.json
+          path: |
+            bench-samples/*.json
+            current.json
           retention-days: 7
 
   # ---------------------------------------------------------------------------

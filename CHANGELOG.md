@@ -20,6 +20,18 @@ are unchanged.
 
 - Moved macOS CI jobs from the retired `macos-14` image to `macos-26`,
   retaining Apple Silicon coverage and the existing benchmark budgets.
+- Migrated the benchmark baseline from local M2 Max measurements to hosted
+  Apple M1 (Virtual) measurements of pinned release 2.0.1. No candidate timings,
+  thresholds, budgets, or CI timing windows were substituted. The retained
+  calibration evidence includes substantial run-to-run variation and a failed
+  candidate diagnostic despite byte-identical benchmark executables; see
+  [the benchmark notes](bench/README.md#updating-baselinejson).
+- Changed the candidate benchmark estimator from one 500 ms run to the
+  per-operation minimum of exactly three complete 500 ms runs, retaining every
+  raw sample. It measures best-case throughput and rejects sustained slowdowns;
+  intermittent slowdowns can be excluded by the minimum. The percentage/absolute
+  budgets and noise floor are unchanged. Invalid samples fail aggregation;
+  the original failed single-run diagnostic remains in the calibration archive.
 - Kept runtime test expectations active in Release builds and replaced the
   ineffective address-only linkage smoke with checks that exercise the API.
 - Made benchmark comparisons reject incomplete or malformed measurements by

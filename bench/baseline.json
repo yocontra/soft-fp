@@ -1,221 +1,272 @@
 {
   "schema": "soft-fp64.bench.v1",
   "environment": {
-    "hardware": "Apple M2 Max",
-    "os": "macOS 26.4.1",
-    "compiler": "Apple clang 21.0.0",
+    "hardware": "Apple M1 (Virtual)",
+    "cpu_count": "3",
+    "os": "ProductName:\t\tmacOS\nProductVersion:\t\t26.6.2\nBuildVersion:\t\t25G83",
+    "architecture": "arm64",
+    "compiler": "Apple clang version 21.0.0 (clang-2100.1.1.101)\nTarget: arm64-apple-darwin25.6.0\nThread model: posix\nInstalledDir: /Applications/Xcode_26.6.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin",
+    "cmake": "cmake version 4.4.4\n\nCMake suite maintained and supported by Kitware (kitware.com/cmake).",
     "build_type": "Release",
-    "method": "minimum ns/op from three isolated 1000 ms/op runs"
+    "fenv": "tls",
+    "source_commit": "fd3b68a18552631ab29d501c8ceec6a72a3791e2",
+    "source_version": "2.0.1",
+    "recorded_at": "2026-11-06T03:48:04.049769+00:00",
+    "configure_args": [
+      "-S",
+      ".",
+      "-B",
+      "build-bench",
+      "-G",
+      "Unix Makefiles",
+      "-DCMAKE_BUILD_TYPE=Release",
+      "-DSOFT_FP64_BUILD_BENCH=ON",
+      "-DSOFT_FP64_BUILD_TESTS=OFF"
+    ],
+    "build_args": [
+      "--build",
+      "build-bench",
+      "--parallel",
+      "--target",
+      "bench_soft_fp64"
+    ],
+    "measurement_args": [
+      "--min-time-ms=1000",
+      "--json"
+    ],
+    "binary_sha256": "30d357bf3b4fd049b7e889e8f0d01c6cfd66aee26270c86ac68bb3112732e3c4",
+    "method": "minimum ns/op per operation from three sequential 1000 ms/op runs of released 2.0.1 code; complete row retained from the selected sample",
+    "runner_image": {
+      "label": "macos-26",
+      "image_os": "macos26",
+      "image_version": "20261026.0455.2",
+      "environment": "github-hosted"
+    },
+    "calibration_run_url": "https://github.com/yocontra/soft-fp/actions/runs/42158388076",
+    "calibration_evidence_url": "https://github.com/yocontra/soft-fp/releases/download/v2.0.2/soft-fp-2.0.2-benchmark-calibration.zip",
+    "raw_sample_sha256": {
+      "run-1.json": "f9e279309c8d49a8327228be44a79d4ddde99ddd423455a78b72cea408e7a39c",
+      "run-2.json": "9de00daba52b8a8ae21c9f6ba2ec2272958081e98e01ab9f9dd44ef15a60f0ec",
+      "run-3.json": "81d6ab1a9c55c9dd04da3d8ef78d4343c2e73549166970b6d985275198665cc6"
+    },
+    "candidate_diagnostic": {
+      "commit": "21d6d4530408c10c3f93a0a547ec92175dcdca8b",
+      "binary_sha256": "30d357bf3b4fd049b7e889e8f0d01c6cfd66aee26270c86ac68bb3112732e3c4",
+      "min_time_ms": 500,
+      "result": "failed unchanged 20% / 5 ns gate: add +41.83%, atanh +21.91%; binary identical to released control",
+      "report": "candidate-comparison.md"
+    },
+    "variability": "Across the three old-code samples, median max/min spread was 17.58%; 15 of 35 operations exceeded 20%. These minima do not establish stable hosted-runner timing."
   },
   "results": [
     {
       "name": "acos",
-      "ns_per_op": 619.3482,
-      "mops_per_sec": 1.6146,
+      "ns_per_op": 785.3353,
+      "mops_per_sec": 1.2733,
       "iterations": 2097152
     },
     {
       "name": "acosh",
-      "ns_per_op": 1089.2855,
-      "mops_per_sec": 0.918,
+      "ns_per_op": 1291.5148,
+      "mops_per_sec": 0.7743,
       "iterations": 1048576
     },
     {
       "name": "add",
-      "ns_per_op": 14.6585,
-      "mops_per_sec": 68.2199,
-      "iterations": 134217728
+      "ns_per_op": 16.5232,
+      "mops_per_sec": 60.5208,
+      "iterations": 67108864
     },
     {
       "name": "asin",
-      "ns_per_op": 594.1457,
-      "mops_per_sec": 1.6831,
+      "ns_per_op": 683.6507,
+      "mops_per_sec": 1.4627,
       "iterations": 2097152
     },
     {
       "name": "asinh",
-      "ns_per_op": 1175.1463,
-      "mops_per_sec": 0.851,
+      "ns_per_op": 1617.8847,
+      "mops_per_sec": 0.6181,
       "iterations": 1048576
     },
     {
       "name": "atan",
-      "ns_per_op": 1047.833,
-      "mops_per_sec": 0.9544,
+      "ns_per_op": 1318.2644,
+      "mops_per_sec": 0.7586,
       "iterations": 1048576
     },
     {
       "name": "atan2",
-      "ns_per_op": 1156.8177,
-      "mops_per_sec": 0.8644,
+      "ns_per_op": 1491.7109,
+      "mops_per_sec": 0.6704,
       "iterations": 1048576
     },
     {
       "name": "atanh",
-      "ns_per_op": 896.771,
-      "mops_per_sec": 1.1151,
-      "iterations": 2097152
-    },
-    {
-      "name": "cbrt",
-      "ns_per_op": 1802.3944,
-      "mops_per_sec": 0.5548,
+      "ns_per_op": 1170.9652,
+      "mops_per_sec": 0.854,
       "iterations": 1048576
     },
     {
+      "name": "cbrt",
+      "ns_per_op": 2225.0953,
+      "mops_per_sec": 0.4494,
+      "iterations": 524288
+    },
+    {
       "name": "ceil",
-      "ns_per_op": 7.5776,
-      "mops_per_sec": 131.968,
+      "ns_per_op": 9.6611,
+      "mops_per_sec": 103.5075,
       "iterations": 134217728
     },
     {
       "name": "cos",
-      "ns_per_op": 859.069,
-      "mops_per_sec": 1.1641,
-      "iterations": 2097152
+      "ns_per_op": 1003.1989,
+      "mops_per_sec": 0.9968,
+      "iterations": 1048576
     },
     {
       "name": "cosh",
-      "ns_per_op": 983.0138,
-      "mops_per_sec": 1.0173,
+      "ns_per_op": 1193.7831,
+      "mops_per_sec": 0.8377,
       "iterations": 1048576
     },
     {
       "name": "div",
-      "ns_per_op": 22.2784,
-      "mops_per_sec": 44.8866,
+      "ns_per_op": 25.2136,
+      "mops_per_sec": 39.6612,
       "iterations": 67108864
     },
     {
       "name": "exp",
-      "ns_per_op": 485.9429,
-      "mops_per_sec": 2.0579,
+      "ns_per_op": 600.3892,
+      "mops_per_sec": 1.6656,
       "iterations": 2097152
     },
     {
       "name": "exp2",
-      "ns_per_op": 498.3542,
-      "mops_per_sec": 2.0066,
+      "ns_per_op": 623.1241,
+      "mops_per_sec": 1.6048,
       "iterations": 2097152
     },
     {
       "name": "expm1",
-      "ns_per_op": 1164.4191,
-      "mops_per_sec": 0.8588,
+      "ns_per_op": 1376.7478,
+      "mops_per_sec": 0.7263,
       "iterations": 1048576
     },
     {
       "name": "fcmp_oeq",
-      "ns_per_op": 3.274,
-      "mops_per_sec": 305.4399,
-      "iterations": 536870912
+      "ns_per_op": 3.8401,
+      "mops_per_sec": 260.4082,
+      "iterations": 268435456
     },
     {
       "name": "floor",
-      "ns_per_op": 8.6861,
-      "mops_per_sec": 115.1265,
+      "ns_per_op": 9.5409,
+      "mops_per_sec": 104.8118,
       "iterations": 134217728
     },
     {
       "name": "fma",
-      "ns_per_op": 34.5406,
-      "mops_per_sec": 28.9514,
+      "ns_per_op": 40.6943,
+      "mops_per_sec": 24.5734,
       "iterations": 33554432
     },
     {
       "name": "from_i32",
-      "ns_per_op": 4.7837,
-      "mops_per_sec": 209.0415,
+      "ns_per_op": 6.063,
+      "mops_per_sec": 164.9349,
       "iterations": 268435456
     },
     {
       "name": "log",
-      "ns_per_op": 731.7949,
-      "mops_per_sec": 1.3665,
+      "ns_per_op": 909.5301,
+      "mops_per_sec": 1.0995,
       "iterations": 2097152
     },
     {
       "name": "log1p",
-      "ns_per_op": 515.0145,
-      "mops_per_sec": 1.9417,
+      "ns_per_op": 651.8747,
+      "mops_per_sec": 1.534,
       "iterations": 2097152
     },
     {
       "name": "log2",
-      "ns_per_op": 747.7597,
-      "mops_per_sec": 1.3373,
+      "ns_per_op": 914.1513,
+      "mops_per_sec": 1.0939,
       "iterations": 2097152
     },
     {
       "name": "mul",
-      "ns_per_op": 7.137,
-      "mops_per_sec": 140.1151,
-      "iterations": 268435456
+      "ns_per_op": 8.7727,
+      "mops_per_sec": 113.9894,
+      "iterations": 134217728
     },
     {
       "name": "pow",
-      "ns_per_op": 3033.9296,
-      "mops_per_sec": 0.3296,
-      "iterations": 524288
+      "ns_per_op": 4188.2175,
+      "mops_per_sec": 0.2388,
+      "iterations": 262144
     },
     {
       "name": "rint",
-      "ns_per_op": 6.9168,
-      "mops_per_sec": 144.5748,
+      "ns_per_op": 7.448,
+      "mops_per_sec": 134.2634,
       "iterations": 268435456
     },
     {
       "name": "rsqrt",
-      "ns_per_op": 225.7992,
-      "mops_per_sec": 4.4287,
-      "iterations": 8388608
+      "ns_per_op": 266.7397,
+      "mops_per_sec": 3.749,
+      "iterations": 4194304
     },
     {
       "name": "sin",
-      "ns_per_op": 752.9888,
-      "mops_per_sec": 1.328,
-      "iterations": 2097152
+      "ns_per_op": 973.6587,
+      "mops_per_sec": 1.0271,
+      "iterations": 1048576
     },
     {
       "name": "sinh",
-      "ns_per_op": 944.6906,
-      "mops_per_sec": 1.0585,
-      "iterations": 2097152
+      "ns_per_op": 1228.3775,
+      "mops_per_sec": 0.8141,
+      "iterations": 1048576
     },
     {
       "name": "sqrt",
-      "ns_per_op": 204.6441,
-      "mops_per_sec": 4.8865,
+      "ns_per_op": 233.4266,
+      "mops_per_sec": 4.284,
       "iterations": 8388608
     },
     {
       "name": "sub",
-      "ns_per_op": 15.3397,
-      "mops_per_sec": 65.1902,
+      "ns_per_op": 17.2602,
+      "mops_per_sec": 57.9367,
       "iterations": 67108864
     },
     {
       "name": "tan",
-      "ns_per_op": 1054.7419,
-      "mops_per_sec": 0.9481,
+      "ns_per_op": 1262.0857,
+      "mops_per_sec": 0.7923,
       "iterations": 1048576
     },
     {
       "name": "tanh",
-      "ns_per_op": 565.3516,
-      "mops_per_sec": 1.7688,
+      "ns_per_op": 673.9725,
+      "mops_per_sec": 1.4837,
       "iterations": 2097152
     },
     {
       "name": "to_i32",
-      "ns_per_op": 7.4387,
-      "mops_per_sec": 134.4326,
-      "iterations": 268435456
+      "ns_per_op": 8.4343,
+      "mops_per_sec": 118.5632,
+      "iterations": 134217728
     },
     {
       "name": "trunc",
-      "ns_per_op": 4.7749,
-      "mops_per_sec": 209.4281,
+      "ns_per_op": 5.8696,
+      "mops_per_sec": 170.3697,
       "iterations": 268435456
     }
   ]

@@ -76,15 +76,34 @@ python3 bench/compare.py /tmp/log.json bench/baseline.json --allow-partial
 
 ### CI usage
 
-One-shot in CI:
+The CI estimate uses exactly three complete 500 ms samples:
 
 ```bash
 cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DSOFT_FP64_BUILD_BENCH=ON
 cmake --build build --target bench_soft_fp64 -j
-./build/bench/bench_soft_fp64 --json --min-time-ms=500 > current.json
+mkdir -p bench-samples
+for sample in 1 2 3; do
+  ./build/bench/bench_soft_fp64 --json --min-time-ms=500 > "bench-samples/run-${sample}.json"
+done
+python3 bench/aggregate.py bench-samples/run-1.json bench-samples/run-2.json \
+  bench-samples/run-3.json > current.json
 python3 bench/compare.py current.json bench/baseline.json \
   --threshold=0.20 --cheap-op-absolute-budget=5.0
 ```
+
+`aggregate.py` validates every sample before selecting each operation's
+minimum-timing row, keeping that row's iteration count and throughput fields.
+All three samples must be non-empty, valid, and contain identical operation
+sets. The subsequent strict comparison requires complete baseline coverage.
+CI uploads every raw sample and the aggregate even when validation or comparison
+fails. It collects the fixed sample count before comparing; it does not retry
+until a passing sample appears.
+
+This estimator measures best-case throughput over three observations. A slowdown
+present in all three samples still fails the existing budgets. An intermittent
+slowdown can be excluded by the minimum, so this gate does not measure tail
+latency or detect every transient regression. Review raw sample spread when
+those properties matter.
 
 The PR-only `bench-regression` job runs on `macos-26`. It uses a 20% threshold
 and permits an absolute increase of at most 5 ns for operations whose baseline
@@ -104,9 +123,31 @@ performance change, or a benchmark methodology change. Investigate regressions
 before proposing a replacement; changing thresholds or replacing measurements
 to hide a slowdown is not a fix.
 
-The committed baseline records hardware, OS, compiler, build type, and sampling
-method in its `environment` object. Its Apple M2 Max measurements are not a
-claim that every `macos-26` runner is the same machine.
+The committed baseline records hardware, OS, compiler, build type, source
+commit, raw-sample hashes, and sampling method in its `environment` object.
+Version 2.0.2 moves the baseline from a local M2 Max to the hosted Apple M1
+(Virtual) runner used by `macos-26`, after the `macos-14` image was retired.
+It uses only three samples of the pinned **2.0.1** release, selecting the
+minimum row per operation; candidate measurements do not enter the baseline.
+This is a hardware-class migration, not a claimed performance improvement.
+
+The [calibration run](https://github.com/yocontra/soft-fp/actions/runs/42158388076)
+recorded byte-identical old and candidate benchmark executables. Nevertheless,
+the separate 500 ms candidate diagnostic failed the then single-run gate for `add`
+(+41.83%) and `atanh` (+21.91%). Across the three old-code samples, the median
+max/min spread was 17.58%, and 15 of 35 operations exceeded 20%; `atanh`'s
+candidate timing was within its old-code sample range. These results show
+hosted-runner timing variability, not a measured code slowdown or a passing
+diagnostic. Version 2.0.2 therefore changes the candidate estimator prospectively
+from one observation to the per-operation minimum of exactly three observations.
+This changes what the gate detects; it is not an unchanged gate. The percentage
+threshold, absolute budget, noise floor, and each sample's 500 ms window remain
+unchanged. The initial failed diagnostic remains part of the release evidence.
+
+The release's [calibration archive](https://github.com/yocontra/soft-fp/releases/download/v2.0.2/soft-fp-2.0.2-benchmark-calibration.zip)
+preserves all three old samples, the separate candidate sample, the failed
+comparison, and build/environment metadata. The baseline records hashes of the
+old samples so the minimum selection can be independently reproduced.
 
 For a proposed refresh:
 

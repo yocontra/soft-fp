@@ -28,3 +28,6 @@ bench/external/
 .claude/
 .worktrees/
 CLAUDE.md
+
+# Python validation tools
+__pycache__/

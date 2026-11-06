@@ -22,7 +22,12 @@ uncommitted worktree.
    doxygen Doxyfile
    ```
 
-5. Push the release commit and wait for every required job in the
+5. Run the [benchmark procedure](bench/README.md#ci-usage): collect exactly
+   three complete 500 ms samples, aggregate their per-operation minima, and
+   compare against the baseline with the documented budgets. Retain all raw
+   samples and failures. This estimates best-case throughput, not tail latency;
+   branch and tag CI do not run the PR-only benchmark job.
+6. Push the release commit and wait for every required job in the
    [CI workflow](.github/workflows/ci.yml) on `main` to pass. That matrix also
    covers Debug builds, alternate exception modes, OpenCL/FTZ, sanitizers,
    and supported platforms; the local preflight above does not replace it.
@@ -60,18 +65,27 @@ Extract each archive into a fresh directory and repeat the Release build,
 tests, and install-consumer smoke test before upload. Generate Doxygen HTML
 from the extracted source and package it as `soft-fp-X.Y.Z-docs.zip`. Export
 GitHub's dependency-graph SBOM as `soft-fp-X.Y.Z.spdx.json`. After every
-payload is final, checksum all four payloads:
+payload is final, checksum the required payloads:
 
 ```bash
 shasum -a 256 soft-fp-${version}.tar.gz soft-fp-${version}.zip \
   soft-fp-${version}-docs.zip soft-fp-${version}.spdx.json > SHA256SUMS
 ```
 
+When refreshing a benchmark baseline, also package the raw calibration samples,
+source/build/environment metadata, and every candidate comparison (including
+failed diagnostics) as `soft-fp-X.Y.Z-benchmark-calibration.zip`. Include that
+optional payload in the checksum manifest before upload:
+
+```bash
+shasum -a 256 soft-fp-${version}-benchmark-calibration.zip >> SHA256SUMS
+```
+
 ## Publish and verify
 
 Create a non-draft, non-prerelease GitHub release named `soft-fp X.Y.Z` using
 the matching changelog section. Upload both source archives, `SHA256SUMS`, the
-documentation archive, and the SPDX SBOM.
+documentation archive, the SPDX SBOM, and any benchmark calibration archive.
 
 Verify after publication:
 
