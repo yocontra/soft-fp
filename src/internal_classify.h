@@ -67,7 +67,6 @@ namespace soft_fp64::internal {
 // here too so callers that include only this header have it available.
 
 SF64_INTERNAL_INLINE double sf64_internal_fabs(double x) noexcept {
-    // SAFETY: bit_cast then clear sign bit. No host FP arithmetic.
     return from_bits(bits_of(x) & ~kSignMask);
 }
 

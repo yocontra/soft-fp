@@ -43,30 +43,25 @@ using namespace soft_fp64::internal;
 // ---- classification (pure bit ops) --------------------------------------
 
 extern "C" int sf64_isnan(double x) {
-    // SAFETY: bits_of is a bit_cast; purely read-only inspection.
     const uint64_t b = bits_of(x);
     return (extract_exp(b) == static_cast<uint32_t>(kExpMax)) && (extract_frac(b) != 0) ? 1 : 0;
 }
 
 extern "C" int sf64_isinf(double x) {
-    // SAFETY: bit_cast; pure bit inspection.
     const uint64_t b = bits_of(x);
     return (extract_exp(b) == static_cast<uint32_t>(kExpMax)) && (extract_frac(b) == 0) ? 1 : 0;
 }
 
 extern "C" int sf64_isfinite(double x) {
-    // SAFETY: bit_cast; pure bit inspection.
     return extract_exp(bits_of(x)) != static_cast<uint32_t>(kExpMax) ? 1 : 0;
 }
 
 extern "C" int sf64_isnormal(double x) {
-    // SAFETY: bit_cast; pure bit inspection. Normal iff exponent in (0, 2047).
     const uint32_t e = extract_exp(bits_of(x));
     return (e != 0 && e != static_cast<uint32_t>(kExpMax)) ? 1 : 0;
 }
 
 extern "C" int sf64_signbit(double x) {
-    // SAFETY: bit_cast; pure bit inspection.
     return static_cast<int>(bits_of(x) >> 63);
 }
 
@@ -77,12 +72,10 @@ extern "C" int sf64_signbit(double x) {
 // emitter then routes back through __acpp_sscp_*_f64 wrappers that call us
 // — infinite recursion, AGX watchdog hang. See defines.h.
 SF64_NO_OPT extern "C" double sf64_fabs(double x) {
-    // SAFETY: bit_cast then clear sign bit. No host FP arithmetic.
     return from_bits(bits_of(x) & ~kSignMask);
 }
 
 SF64_NO_OPT extern "C" double sf64_copysign(double x, double y) {
-    // SAFETY: bit_cast; combine magnitude of x with sign of y via bitops only.
     return from_bits((bits_of(x) & ~kSignMask) | (bits_of(y) & kSignMask));
 }
 
@@ -189,7 +182,6 @@ extern "C" double sf64_nextafter(double x, double y) {
         return canonical_nan();
     }
 
-    // SAFETY: bit_cast both operands for bit-level neighbor arithmetic.
     const uint64_t xb = bits_of(x);
     const uint64_t yb = bits_of(y);
 
@@ -267,7 +259,6 @@ extern "C" double sf64_hypot(double a, double b) {
     const double ay = sf64_fabs(b);
 
     // Both zero -> +0.
-    // SAFETY: bit_cast for zero check; no host FP.
     if (is_zero_bits(bits_of(ax)) && is_zero_bits(bits_of(ay))) {
         return +0.0;
     }

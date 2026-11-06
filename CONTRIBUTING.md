@@ -1,183 +1,135 @@
 # Contributing to soft-fp
 
-Read this before changing anything in `src/`, `tests/`, `bench/`, or
-`.github/workflows/`.
+This file defines the shared development and review requirements. Local agent
+configuration should link here rather than duplicate them.
 
-The integrity contract lives in this file so every contributor sees
-the same rules across machines. Local agent configuration (Claude
-Code, Cursor, etc.) may add to these rules but not relax them.
-
-## Build + test
+## Build and check
 
 ```bash
-cmake -B build
+cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
 cmake --build build --parallel
 ctest --test-dir build --output-on-failure
+prek run --all-files
 ```
 
-`prek run --all-files` must be clean before pushing. CI runs the same
-hooks (clang-format pinned to v19.1.7, the no-host-FP guard, whitespace
-hygiene, large-file guard, private-key detection).
+Also run Debug and the configurations affected by the change. The
+[CI workflow](.github/workflows/ci.yml) defines the platform, exception-mode,
+sanitizer, coverage, fuzz, install, and performance checks. Release publication
+follows [RELEASING.md](RELEASING.md).
 
-## Hard constraints
+## Implementation constraints
 
-These are the rules that the design relies on. Breaking any of them is
-breaking the library, regardless of whether tests pass.
+- Production arithmetic uses integer operations. Floating types in the binary64
+  ABI carry bit patterns; they must not introduce host floating-point arithmetic,
+  comparisons, conversions, libm calls, intrinsics, or inline assembly. SLEEF
+  operations use the software arithmetic and comparison helpers. This rule
+  also applies to code adapted from upstream.
+- Keep the target's floating-point contraction and fast-math restrictions.
+  Do not enable contraction through per-file flags, pragmas, or attributes.
+  `sf64_fma` computes an integer product and alignment followed by one rounding;
+  it does not depend on host FMA instructions.
+- Run `scripts/check_no_host_fp.sh` in source and optimized-IR modes as CI does.
+  The source scan catches prohibited patterns; the IR audit catches operations
+  introduced by optimization. Neither a regex nor a passing sample proves
+  numerical correctness. Reproduce false positives and improve the check
+  instead of adding exclusions.
+- Public C symbols use `sf64_*`, `sf128_*`, or `sf256_*`. Keep cross-translation-
+  unit helpers hidden. Update the ABI manifest and install-consumer tests for
+  public additions. Berkeley SoftFloat backend symbols and state must remain
+  isolated under the production prefix.
+- Preserve upstream copyright and license notices. Record the source file,
+  pinned revision, or adapted function in `NOTICE`. Do not reformat vendored
+  trees or claim attribution for code that is not used.
+- Use C++17 and the checked-in clang-format configuration. New source files
+  carry an SPDX identifier for their actual license. Document public operations
+  with their semantics, precision contract, and special cases.
 
-### No host-FPU dependency in `src/`
+## Numerical validation
 
-`sf64_*` must be bit-correct on a device with no fp64 unit. Every
-`+ - * / < > <= >= == != (double)int` in `src/` goes through an
-`sf64_*` ABI call — arithmetic via `sf64_add`/`sub`/`mul`/`div`/`fma`,
-relational comparisons via the `sleef::lt_/le_/gt_/ge_/eq_/ne_` helpers
-in `src/sleef/sleef_common.h` (which wrap `sf64_fcmp` with the LLVM
-predicate encoding), and integer→fp via the `sf64_from_i{8,16,32,64}` /
-`sf64_from_u{…}` matrix.
+A failing numerical test requires an implementation fix or an explicitly
+reviewed change to the public contract. Do not make a failure disappear by:
 
-The SLEEF transcendentals are a **port** of upstream SLEEF 3.6, not a
-verbatim drop. The port completes the host-FPU removal that upstream
-does not do. **There is no carve-out.** If upstream SLEEF structure
-suggests a raw `double` op, the port rewrites it to `sf64_*`.
+- widening a tolerance, flattening NaN payloads or signed zero, replacing exact
+  checks with approximate checks, or moving inputs into a weaker test tier;
+- skipping or deleting oracle rows, reducing a corpus, changing a seed to avoid
+  failures, narrowing exhaustive coverage, or silently sharding it;
+- lowering oracle precision, substituting host libm for MPFR, or rounding an
+  oracle through a narrower type before the specified final conversion;
+- adding input-specific exceptions keyed to failing corpus rows, adjusting
+  upstream coefficients to fit observed results, or generating expected output
+  from the implementation under test;
+- replacing library symbols with stubs or overrides, or disabling test,
+  sanitizer, fuzz, coverage, or benchmark checks because they fail.
 
-The mechanical guard is `scripts/check_no_host_fp.sh`. It scans every
-`.cpp` / `.h` under `src/` (no exclusions) for `<cmath>` / `<math.h>`
-/ `<fenv.h>` includes, libm / `std::` math calls, `__builtin_` FP
-intrinsics, `static_cast<double>(int…)`, C-style `(double)`/`(float)`
-casts, fp-contract / fast-math escape pragmas, and raw comparisons
-against an FP literal. It runs as the `no-host-fp` hook in
-`.pre-commit-config.yaml`. If a finding is a genuine false positive,
-fix the regex in the script — do not suppress the hit or add an
-allow-list entry.
+Binary64 MPFR references use at least 200-bit precision; wider-format references
+must exceed the destination precision. Expected-bit tables cite TestFloat,
+MPFR computation, or an IEEE-754 derivation. Tests call the real library.
+Keep runtime expectations active in Release builds as well as Debug.
 
-### No fp-contract escape
+The binary64 accuracy gates are `BIT_EXACT` (bitwise equality), `U10` (4 ULP),
+`U35` (8 ULP), and `GAMMA` (1024 ULP), with per-operation domains in the tests
+and README. Do not introduce report-only tiers into the correctness suite.
+A function outside its contract must be fixed, explicitly marked experimental
+and excluded from shipped accuracy claims, or removed through the appropriate
+API change. Do not widen its gate. An experimental diagnostic is not a passing
+correctness test.
 
-`CMakeLists.txt` sets `-ffp-contract=off` globally on the library
-target so the compiler never fuses `a*b+c` into `llvm.fma.f64` (which
-would silently change bits and create a link cycle since `sf64_fma`
-is implemented on top of `sf64_add` / `sf64_mul`). Do not add
-`#pragma STDC FP_CONTRACT ON`, `#pragma clang fp contract(fast)`,
-`__attribute__((optimize))`, `set_source_files_properties` overrides,
-or any other source-level escape. The guard script flags these.
+For ULP failures, record input bits, actual bits, oracle bits, and ULP delta.
+Check normalization, guard/sticky bits, ties, subnormal transitions, signed
+zeros, and NaN handling before changing the algorithm.
 
-### Public ABI uses format-prefixed C symbols
+Every sweep counts every input. Nonfinite results must be classified and
+compared, including signs of infinity and zero; they cannot be silently dropped.
+Wide exponent ranges need logarithmic sampling. Preserve the existing
+trivial-match limits that reject mostly-NaN or mostly-infinite sweeps. State the
+sample count and bounds accurately. Consistency checks such as `sincos` versus
+`sin`/`cos` supplement independent oracles rather than replace them.
 
-`-fvisibility=hidden -fvisibility-inlines-hidden` is set on every library
-target. Public symbols use `sf64_*`, `sf128_*`, or `sf256_*`; cross-TU
-helpers remain hidden. `scripts/check_abi_manifest.sh` verifies that every
-enabled public declaration is defined and that Berkeley SoftFloat's public
-API and state cannot leak under their upstream names. The fp64 ABI CI job
-also rejects unexpected globals in `libsoft_fp64.a`.
+Fuzz targets may use looser crash-hunting budgets only when their headers state
+the budget and rationale. Accuracy regressions belong in the oracle suite.
+The only existing leak-sanitizer exemption is `ASAN_OPTIONS=detect_leaks=0`
+for MPFR caches; do not extend it to conceal failures.
 
-## Integrity rules
+## Claims and performance
 
-Silently weakening tests, laundering numerical regressions through
-"refactor" commits, or stretching the definition of "passing" destroys
-the value of the test suite. Reviewers (human or AI) are expected to
-enforce the rules below.
+Precision claims must identify the operation, tested domain, oracle, precision,
+and enforcing test. Distinguish finite test coverage from a full-domain proof,
+and dated observations from release guarantees. The README claim checker binds
+its named power-sweep table to the corresponding executable definitions; other
+claims still require review.
 
-**Never, under any justification:**
+Performance claims need reproducible measurements and machine/build metadata.
+Never refresh `bench/baseline.json`, raise a threshold, increase a noise floor,
+add skip lists, or alter compiler/timing settings to conceal a regression.
+Baseline updates require a hardware-class change or a reviewed deliberate
+performance/methodology change. Keep CI regression checks enforcing.
 
-- Widen a ULP tolerance, replace `ASSERT_EQ(bits, ...)` with
-  `ASSERT_NEAR` / `EXPECT_DOUBLE_EQ` / `approx_equal`, or flatten NaN
-  payloads / signed-zero in a comparator.
-- Modify, comment out, skip, `GTEST_SKIP`, `DISABLED_`-prefix, `#if
-  0`, `if (on_ci()) return`, or delete rows from TestFloat / MPFR
-  vectors. Move cases between test files to escape a tighter tier.
-  Add `// TODO: fix later` or `// known-broken`.
-- Shrink a random corpus, change the PRNG seed until the failure
-  vanishes, narrow the exhaustive `f32 ↔ f64` range, or silently
-  shard.
-- Drop MPFR precision below 200 bits, round the reference through
-  `double`, or replace an MPFR call with libm.
-- Special-case inputs with magic-constant branches keyed to failing
-  corpus rows — even dressed up as IEEE-754 classification.
-- Call host fp64 from `src/` by any route: `std::sqrt`, libm,
-  `__builtin_sqrt` / `__builtin_fma` / `__builtin_sin`, inline asm,
-  hardware intrinsics, `volatile double` tricks, `<cmath>` /
-  `<math.h>` includes. Tests may use host fp64 as an oracle; `src/`
-  never uses it as an implementation.
-- Tune `internal.h` rounding primitives, Mesa `s_*` helpers, or SLEEF
-  constants to match an observed output. Ports stay faithful to
-  upstream; if the output is wrong, the port is wrong.
-- Stub `sf64_*` with weak symbols, link-order tricks, `LD_PRELOAD`,
-  or test-local overrides. Tests must call the real library.
-- Populate an expected-output table from the current implementation.
-  Any expected-bits table cites its source (TestFloat row, MPFR
-  computation, IEEE-754 derivation) in a comment.
-- Update `bench/baseline.json` to erase a regression. Regenerate only
-  on hardware-class change or a reviewed deliberate perf change.
-- Disable / remove fuzz targets, sanitizer options, or ctest entries
-  because they fail. `ASAN_OPTIONS=detect_leaks=0` (MPFR caches leak
-  past `main`) is the only exemption.
-- Claim "tests pass" via `ctest -E <failing>`, `ctest -R <subset>`,
-  `GTEST_FILTER=-<failing>`, or selective re-runs. "Green" means a
-  full unfiltered `ctest --test-dir build --output-on-failure`.
-- Land a numerical change inside a commit labeled `refactor` /
-  `style`. Any line move inside `src/` is a numerical claim; back it
-  with a ctest run.
-- Fabricate tool output. If you did not run the command in this
-  session, you do not have the result.
+## Independent review
 
-### Reviewer claims
+Changes under `src/`, `tests/`, `fuzz/`, `.github/workflows/`, to `.clang-format`,
+to benchmark baselines/comparison logic, or to compile, sanitizer, or ctest
+arguments require independent review before completion:
 
-- **Reproduce before acting.** If a reviewer (human or AI) reports "N
-  sites do X" or "the code cheats by Y," reproduce the finding with a
-  concrete command before changing code. Counting the token `double`
-  across ABI signatures and calling that a "host-FPU dependency" is a
-  category error. The guard script is authoritative on what counts as
-  a host-FPU use; if the script says clean and a reviewer says dirty,
-  the reviewer owes a `file:line` citation that the script misses —
-  patch the script to catch it, then act. Do not delete or rewrite
-  correct ABI code to pacify an unverified claim.
-- **Scope-correct claims must not be dismissed.** If the reviewer's
-  grep target is `src/sleef/` and yours was `src/` minus
-  `src/sleef/`, the reviewer is right and you are wrong — re-run the
-  scan with their scope before publishing a rebuttal.
+1. Run the full unfiltered ctest suite and retain its literal result.
+2. Give a fresh reviewer the diff and these requirements, without an author's
+   explanation of why the change is correct. Ask for evidence of weakened
+   validation or incorrect numerical behavior, with file/line references.
+3. Report the reviewer's findings verbatim. Fix each finding, or rebut it with
+   a specific implementation, upstream, or specification citation. Reproduce
+   claims in their original scope before changing code or rejecting them.
+4. Changes to `tests/testfloat/`, `tests/mpfr/`, or `bench/baseline.json` need
+   a second independent reviewer.
 
-### Ports are not carve-outs
-
-Files derived from upstream but hand-modified into the repo (e.g.
-`src/sleef/`, the Mesa-derived arithmetic in `src/arithmetic.cpp`)
-are subject to every rule including the no-host-FPU rule. Vendored
-code lives in a `vendor/` subdirectory with a pinned upstream SHA
-(see `tests/testfloat/vendor/`, `bench/external/`); anything outside
-those directories is first-party. "We followed upstream structure"
-is not a defense — if upstream uses raw `double` arithmetic and we
-ship a port, the port rewrites every host-FPU op.
-
-### Sweep windows must match claimed sampling
-
-`sweep2_uniform` over `[10⁻ᴺ, 10⁺ᴺ]` for `N ≥ 3` is degenerate:
-linear sampling concentrates ~99% of points in the top decade, so
-the lower decades of the advertised window are effectively
-unexercised. Wide-decade windows must use `sweep2_log` (or
-`sweep1_log`). The `record()` function in
-`tests/mpfr/test_mpfr_diff.cpp` and `tests/test_coverage_mpfr.cpp`
-enforces this with a trivial-match gate (>25% of (NaN,NaN) or
-matching-sign-(inf,inf) fails the sweep) — if the gate fires, fix
-the sampling, do not raise the threshold.
-
-### Test claims and code agree
-
-Every numeric claim in `README.md`, `CHANGELOG.md`, `TODO.md`, or
-header Doxygen must be traceable to a specific test with a matching
-bound. Test-corpus sizes named in file headers are contracts. Any
-discrepancy between "`kN = 10000`" in the header comment and `for
-(int i = 0; i < 4096; ++i)` in the body is a bug, not a shortcut.
-The `readme-claim-parity` hook in `.pre-commit-config.yaml` checks
-that sweep windows quoted in `README.md` appear verbatim in the test
-source.
+Documentation-only changes outside the paths above do not require numerical
+review. Build/script changes that do not affect compilation, test execution,
+coverage, or benchmark policy can use ordinary review. Preserve behavioral
+regression tests for fixes; do not label numerical changes as style-only work.
 
 ## Reporting
 
-- No "tests pass" without pasting the final ctest `Passed`/`Failed`
-  line.
-- No "bench is neutral" without pasting the `compare.py` table.
-- End-of-turn summaries must call out edits under `tests/`, `fuzz/`,
-  `bench/baseline.json`, `bench/compare.py`, `src/sleef/`, or
-  compile/sanitizer/ctest args in `CMakeLists.txt`.
-- Ban "should work" / "should be bit-exact" — run it.
-
-When something is broken you can't fix, say so and stop. Landing
-green CI at the cost of a weaker suite is worse than leaving the test
-red.
+Report only commands run in the current session. A subset run is useful for
+iteration but is not a passing full suite. Include the final ctest Passed/Failed
+line when reporting success and the comparison table for a performance claim.
+Call out edits to tests, fuzzers, SLEEF sources, benchmark baselines/comparison
+logic, and compile/sanitizer/ctest settings. If a failure cannot be fixed, report
+it explicitly and leave the check failing.

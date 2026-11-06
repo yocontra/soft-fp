@@ -143,8 +143,7 @@ SF64_HIDDEN SF64_SLEEF_NOINLINE double sf64_internal_expk_dd(DD d, sf64_internal
 // preserved to DD precision before the final round.
 //
 // `logk2_dd(d)` = log(d) where d is a DD argument and the result is DD.
-// Used by lgamma_u1 to evaluate log of the Lanczos numerator/denominator
-// quotient at full DD width.
+// Used by lgamma_u1 to evaluate log(abs(gammak.div)) at full DD width.
 //
 // `sinpik_dd(d)` = sinπ(d) carried as DD. Used by the gammak reflection
 // branch (x < 0.5) so the π-scaled sine of the reduced argument retains

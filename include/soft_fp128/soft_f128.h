@@ -9,9 +9,7 @@
  * signaling NaNs raise INVALID. Integer narrowing is deterministic: NaN is
  * zero and out-of-range values saturate while raising INVALID.
  *
- * This is deliberately a core arithmetic API. No binary128 transcendental
- * accuracy contract is published in 2.0, so no approximate or host-libm
- * placeholder symbols are exposed. */
+ * Transcendental functions are not part of this API. */
 
 #include "soft_fp64/rounding_mode.h"
 #include "soft_fp64/soft_f64.h"

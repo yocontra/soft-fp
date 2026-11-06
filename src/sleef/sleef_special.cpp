@@ -84,12 +84,10 @@ constexpr double kInvPI_lo = -1.9678676675182486e-17;
 // pi-scaled inverse trig (asinpi / acospi / atanpi / atan2pi)
 // ========================================================================
 //
-// Idea: compute the forward inverse-trig result with the existing real
-// `sf64_asin` / `sf64_acos` / `sf64_atan` / `sf64_atan2` primitives, then
-// multiply by 1/pi carried in double-double.  This avoids losing a bit to
-// the final divide.  The angle itself is only a plain double so the
-// best we can get is about (ulp(angle) + ulp(angle) * |lo/hi|) ~ 1 ULP.
-// Well within the U35 (<= 8 ULP) band that the test spec pins for asinpi et al.
+// Compute the inverse-trig angle with the binary64 primitives, then multiply
+// by a double-double representation of 1/pi. The angle has already rounded
+// to binary64; the split multiplier reduces error in the final scaling.
+// Accuracy is checked by the independent MPFR sweeps.
 
 extern "C" SF64_SLEEF_NOINLINE double sf64_asinpi(double x) {
     soft_fp64::sleef::sf64_internal_fe_acc fe;

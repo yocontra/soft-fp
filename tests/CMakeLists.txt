@@ -1,14 +1,26 @@
-# Smoke test — references every ABI symbol group.
+# Header/storage smoke and representative ABI calls.
 if(MSVC)
     set(SF64_TEST_FP_OPTIONS /fp:strict)
 else()
     set(SF64_TEST_FP_OPTIONS -ffp-contract=off -fno-math-errno)
 endif()
 find_package(Threads REQUIRED)
-add_executable(test_scaffold test_scaffold.cpp)
-target_link_libraries(test_scaffold PRIVATE soft_fp64::soft_fp64)
-target_compile_options(test_scaffold PRIVATE ${SF64_TEST_FP_OPTIONS})
-add_test(NAME test_scaffold COMMAND test_scaffold)
+add_executable(test_header_smoke test_header_smoke.cpp)
+target_link_libraries(test_header_smoke PRIVATE soft_fp64::soft_fp64)
+target_compile_options(test_header_smoke PRIVATE ${SF64_TEST_FP_OPTIONS})
+add_test(NAME test_header_smoke COMMAND test_header_smoke)
+
+# Verify the test expectation helper still evaluates and fails under NDEBUG.
+add_executable(test_check test_check.cpp)
+add_test(NAME test_check COMMAND test_check)
+add_test(NAME test_check_failure COMMAND test_check --fail)
+set_tests_properties(test_check_failure PROPERTIES WILL_FAIL TRUE)
+
+find_package(Python3 COMPONENTS Interpreter REQUIRED)
+add_test(NAME test_readme_claim_parity
+    COMMAND "${Python3_EXECUTABLE}" -B "${PROJECT_SOURCE_DIR}/scripts/test_readme_claim_parity.py")
+add_test(NAME test_bench_compare
+    COMMAND "${Python3_EXECUTABLE}" -B "${PROJECT_SOURCE_DIR}/scripts/test_bench_compare.py")
 
 # The public C ABI must compile as C11 and link against the C++ implementation.
 add_executable(test_c_api test_c_api.c)
@@ -121,9 +133,9 @@ foreach(_test IN LISTS SF64_CORE_TESTS)
     endif()
 endforeach()
 
-# Transcendental 1-ULP diff tests.
+# Supplementary libm differential and IEEE special-case tests.
 set(SF64_TRANSCENDENTAL_TESTS
-    test_transcendental_1ulp
+    test_transcendental_libm
     test_powr_ieee754
 )
 
@@ -139,9 +151,7 @@ foreach(_test IN LISTS SF64_TRANSCENDENTAL_TESTS)
     endif()
 endforeach()
 
-# Exhaustive / oracle tests. Each lives in its own subdirectory and is
-# lazily added if present (keeps the top-level configure path light when
-# oracle deps are missing).
+# Independent oracle suites; each subdirectory checks its dependencies.
 foreach(_oracle_dir testfloat mpfr)
     if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/${_oracle_dir}/CMakeLists.txt")
         add_subdirectory(${_oracle_dir})

@@ -68,18 +68,12 @@ repos:
         pass_filenames: false
         files: ^src/.*\.(cpp|h)$
 
-  # Verify every numeric sweep-window claim in README.md (e.g.
-  # `x ∈ [1e-100, 1e100]`) appears as adjacent (lo, hi) arguments in
-  # the test source. Fires when README and tests/mpfr/test_mpfr_diff.cpp
-  # / tests/test_coverage_mpfr.cpp / tests/test_transcendental_1ulp.cpp
-  # drift apart — exactly the failure mode the reviewer caught with the
-  # "x ∈ [1e-100, 1e100]" pow-xbig claim that the test wasn't actually
-  # sampling.
+  # Check named README power sweeps against their executable MPFR contracts.
   - repo: local
     hooks:
       - id: readme-claim-parity
-        name: README sweep-window claims match test source
+        name: README power sweeps match MPFR contracts
         entry: scripts/check_readme_claim_parity.py
         language: system
         pass_filenames: false
-        files: '^(README\.md|tests/.*\.cpp)$'
+        files: '^(README\.md|tests/.*\.(cpp|h)|scripts/(check|test)_readme_claim_parity\.py)$'

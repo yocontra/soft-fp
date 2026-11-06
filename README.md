@@ -3,10 +3,11 @@
 [![release](https://img.shields.io/github/v/release/yocontra/soft-fp)](https://github.com/yocontra/soft-fp/releases/latest)
 [![CI](https://github.com/yocontra/soft-fp/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/yocontra/soft-fp/actions/workflows/ci.yml)
 
-Portable, bit-exact IEEE-754 soft-float libraries in pure integer code —
-for any target without hardware floating-point of the relevant width.
+Software binary64, binary128, and binary256 arithmetic implemented with
+integer operations. Binary64 also includes transcendental functions with
+the accuracy bounds listed below.
 
-Current stable release: **2.0.1** (2026-08-11).
+Current stable release: **2.0.2** (2026-11-05).
 
 The repository hosts a suite of integer-only IEEE-754 implementations that
 share build infrastructure, oracle setup (Berkeley TestFloat 3e + MPFR),
@@ -29,74 +30,36 @@ The legacy binary64 package remains supported. Wider formats are enabled by
 default and can be disabled with `SOFT_FP_BUILD_FP128=OFF` or
 `SOFT_FP_BUILD_FP256=OFF`.
 
-The 2.0 wider-format contract is the complete IEEE core (arithmetic,
-conversion, rounding, comparison, classification, flags, remainder, sqrt,
-and FMA). Binary64 additionally provides the documented libm/transcendental
-surface. Binary128/binary256 transcendental symbols are intentionally absent
-until they have format-specific algorithms and MPFR accuracy gates; the
-project does not ship host-libm forwarders or placeholder approximations.
+The wider-format APIs provide arithmetic, rounding, comparisons,
+classification, exception flags, remainder, square root, and FMA. Their current
+conversions cover fixed-width integers and binary64; binary32 and direct
+binary128/binary256 conversions remain in `TODO.md`. Transcendental
+functions are available only for binary64.
 
-## What soft-fp64 does
+## Build and use
 
-Lots of modern hardware ships without fp64 units: Apple GPUs, most mobile
-and tile-based GPUs, WebGPU / OpenGL ES class devices, many embedded DSPs,
-FPGAs, and custom accelerators. When scientific, geospatial, cryptographic,
-or scientific-computing code hits one of these targets, the compiler either
-traps, silently truncates to `float`, or refuses to lower the code at all.
+```bash
+cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+cmake --build build --parallel
+ctest --test-dir build --output-on-failure
+```
 
-`soft-fp64` is a clean, header-plus-object C++17 implementation of the full
-IEEE-754 binary64 surface, built entirely on 32/64-bit integer bit
-operations. There is no hidden dependency on the host FPU. Any frontend
-that can emit a call to an `extern "C"` symbol can get correct `double`
-behavior on a device without a hardware fp64 unit. The public binary64 ABI
-uses `double` as a 64-bit bit-pattern carrier, so the compiler/IR must still
-be able to represent the binary64 type in signatures. No emitted arithmetic
-instruction depends on hardware fp64; CI verifies optimized LLVM IR. Source
-languages with no binary64 type at all (notably WGSL) need a frontend adapter
-that maps their integer-pair representation to these helpers during lowering.
+```c
+#include <soft_fp64/soft_f64.h>
 
-## Where this is useful
+double sum = sf64_add(1.0, 2.0);
+double root = sf64_sqrt(2.0);
+```
 
-Targets and toolchains that currently have no good story for `double`
-when the hardware lacks an fp64 unit. Examples include:
+The binary64 C ABI uses `double` to carry bits. A compiler or IR must be able
+to represent that type in function signatures even when the target lacks fp64
+instructions. CI checks optimized LLVM IR for host floating-point operations.
+Languages without a binary64 type need a compiler adapter; linking this
+library alone does not add that type to a language.
 
-- **SYCL on Apple GPUs.** AdaptiveCpp-style Metal SSCP frontends can
-  compile soft-fp64 into libkernel bitcode and lower `double` kernels
-  to integer-backed helper calls (much slower than fp32, but correct).
-- **`torch.float64` on MPS.** PyTorch's MPS backend errors on fp64.
-  A dispatch path backed by this library would produce a working
-  (slow) tensor.
-- **WebGPU compiler runtimes.** WGSL has no `f64`, so direct source-level
-  calls are impossible. A Tint/Naga-style lowering pass can represent values
-  as integer pairs and map generated binary64 operations to this library's
-  integer-only IR before final WGSL/SPIR-V emission.
-- **Mesa drivers without fp64.** Lima, Panfrost, older Freedreno,
-  LLVMpipe-on-WASM reject fp64 OpenCL kernels. Mesa's in-tree
-  softfloat covers arithmetic but not transcendentals; this library
-  covers the full surface.
-- **compiler-rt / libgcc softfloat comparison.** The `__adddf3` /
-  `__muldf3` / `__divdf3` builtins used on RISC-V without D, ARMv6-M,
-  and WASM-softfp have known subnormal / NaN-payload corner cases.
-  soft-fp64 is TestFloat- and MPFR-verified bit-for-bit on the same
-  inputs, so it's usable as a differential oracle.
-- **Independent reference.** Every op is gated in CI against Berkeley
-  TestFloat 3e plus a 200-bit MPFR oracle, with the precision table
-  published, so the library can serve as an oracle for other
-  softfloat implementations.
-
-## Who this is for
-
-- **Compiler / runtime authors** retargeting language front-ends to hardware
-  without fp64 (AdaptiveCpp's MSL emitter is the first consumer; anyone
-  doing the same for Vulkan / WebGPU / a custom ISA can link against the
-  same ABI).
-- **Shader / kernel authors** who need correct `double` in a single hot path
-  and don't want to carry a full libm port.
-- **Scientific / geospatial / financial code** being cross-compiled to an
-  fp64-less target (mobile, embedded, browser) that previously required
-  giving up precision or the target.
-- **Test oracles** — the implementation is also a clean, self-contained
-  reference for anyone validating their own soft-fp64 code.
+The existing AdaptiveCpp Metal integration is described below. PyTorch MPS
+and WebGPU adapters are possible downstream projects, not integrations shipped
+by this repository.
 
 ## Install
 
@@ -226,10 +189,10 @@ ABI plus the `src/` and `src/sleef/` source trees (exposed by
 
 ## Precision guarantees
 
-Every bound below is **CI-gated** against a 200-bit MPFR oracle by the
-sweep named in the last column. The tier for each row is the tightest
-bound ctest enforces; measured worst-case may be inside it, but the
-guarantee is the gate.
+The binary64 tests use the oracles named in the last column. Transcendental
+accuracy sweeps use MPFR at 200-bit precision; core operations also use host
+references and Berkeley TestFloat. These are bounds enforced on the tested
+corpora, not exhaustive proofs over all binary64 inputs.
 
 Tiers: `BIT_EXACT` (0 ULP), `U10 = 4 ULP`, `U35 = 8 ULP`, `GAMMA = 1024 ULP`.
 
@@ -241,32 +204,39 @@ Tiers: `BIT_EXACT` (0 ULP), `U10 = 4 ULP`, `U35 = 8 ULP`, `GAMMA = 1024 ULP`.
 | Rounding | `floor`, `ceil`, `trunc`, `rint`, `round`, `fract`, `modf`, `ldexp`, `frexp`, `ilogb`, `logb` | **BIT_EXACT** | `test_rounding_edges.cpp` |
 | Transcendentals (u10) | `sin`, `cos`, `asin`, `acos`, `atan`, `atan2`, `exp`, `exp2`, `exp10`, `expm1`, `log`, `log2`, `log10`, `log1p`, `cbrt`, `cosh`, `acosh`, `atanh`, `sinpi`, `cospi`, `asinpi`, `acospi`, `atanpi`, `atan2pi` | **U10** ≤ 4 ULP | `test_mpfr_diff.cpp` |
 | Transcendentals (u35) | `tan`, `tanpi`, `sinh`, `tanh`, `asinh` | **U35** ≤ 8 ULP | `test_mpfr_diff.cpp` |
-| `pow` / `powr` / `pown` / `rootn` | `pow(x, y)`, `powr(x, y)`, `pown(x, n)`, `rootn(x, n)` | **U35** ≤ 8 ULP, bounded region | three overlapping windows, see note |
-| `erf` | `erf(x)` | **U10** ≤ 4 ULP | `[-5, 5]`, `test_mpfr_diff.cpp` (SLEEF u1 port; measured worst 1 ULP) |
-| `erfc` | `erfc(x)` | **U10** ≤ 4 ULP | `[-5, 27]` (full active range incl. deep tail; measured worst 1 ULP) |
-| `tgamma` | `tgamma(x)` | **U10** ≤ 4 ULP | `[0.5, 170]` (through the overflow boundary; measured worst 1 ULP) |
-| `lgamma`, `lgamma_r` | `lgamma(x)` | **U10** ≤ 4 ULP zero-free tail; **GAMMA** at zero-crossings | `[3, 1e4]` U10 Lanczos tail + `(0.5, 3)` GAMMA (ULP ratio unbounded as `\|lgamma\| → 0` near `x=1, 2`; absolute error stays inside U10) |
+| General power | `pow(x, y)` | **U35** ≤ 8 ULP | three sampled windows, see note |
+| `powr` | `powr(x, y)` | **U35** ≤ 8 ULP | `x` log-sampled in `[1e-6, 1e6]`, `y` uniform in `[-50, 50]`; `test_mpfr_diff.cpp` |
+| `pown` | `pown(x, n)` | **U35** ≤ 8 ULP | `x` uniform in `[-4, 4]`, integer `n` in `[-10, 10]`; `test_mpfr_diff.cpp` |
+| `rootn` | `rootn(x, n)` | **U35** ≤ 8 ULP | `x` log-sampled in `[0.01, 1e10]`, `n ∈ {2,3,4,5,7,11}`; `test_mpfr_diff.cpp` |
+| `erf` | `erf(x)` | **U10** ≤ 4 ULP | `[-5, 5]`, `test_mpfr_diff.cpp` (SLEEF u1 port) |
+| `erfc` | `erfc(x)` | **U10** ≤ 4 ULP | `[-5, 27]`, `test_mpfr_diff.cpp`, including the deep tail |
+| `tgamma` | `tgamma(x)` | **U10** ≤ 4 ULP | `[0.5, 170]`, `test_mpfr_diff.cpp` |
+| `lgamma`, `lgamma_r` | `lgamma(x)` | **U10** ≤ 4 ULP zero-free tail; **GAMMA** at zero-crossings | `[3, 1e4]` U10 tail + `[0.5, 3]` GAMMA near zeros at `x=1, 2`; `test_mpfr_diff.cpp` |
 
 ### `sf64_pow` — bounded-region U35
 
-`sf64_pow` is composed as `pow(x, y) = exp(y · log(x))` with a double-double
-`y · log(x)` intermediate collapsed to a single `double` before the final
-`sf64_exp`. CI gates three overlapping sweeps at **U35 ≤ 8 ULP**:
+`sf64_pow` evaluates `exp(y · log(|x|))`, carrying the logarithm and product
+in double-double form into the internal exponential kernel. Special-case and
+sign handling surround that positive-magnitude calculation. CI gates these
+named sweeps in `tests/mpfr/test_mpfr_diff.cpp`:
 
-- main: `x ∈ [1e-6, 1e6]`, `y ∈ [-50, 50]`
-- x-wide: `x ∈ [1e-100, 1e100]`, `y ∈ [-5, 5]`
-- y-wide: `x ∈ [1e-6, 1e3]`, `y ∈ [-100, 100]`
+| Sweep | x sampling | x range | y sampling | y range | Tier | Oracle | Samples |
+|---|---|---|---|---|---|---|---|
+| `pow` | log | `[1e-6, 1e6]` | uniform | `[-50, 50]` | U35 (8 ULP) | MPFR (200 bits) | 10000 |
+| `pow-xbig` | log | `[1e-100, 1e100]` | signed log | `[1e-5, 5]` | U35 (8 ULP) | MPFR (200 bits) | 10000 |
+| `pow-ybig` | log | `[1e-6, 1e3]` | uniform | `[-100, 100]` | U35 (8 ULP) | MPFR (200 bits) | 10000 |
 
-Across the full double range, 1.1's `logk_dd` DD-Horner rewrite brings
-measured worst-case `sf64_pow` inside U10 (≤4 ULP); the shipped U35
-tier remains the gated ceiling.
+Signed-log sampling chooses a logarithmically distributed magnitude and a
+random sign; the x-wide sweep excludes `|y| < 1e-5`. The README claim checker
+binds these rows to their named sweep calls, sampling methods, tier, oracle,
+and sample count. These results do not establish a bound over the full double
+range.
 
-The previous
-`sf64_lgamma` zero-crossing caveat on `(0.5, 3)` was closed by
-zero-centered Taylor branches in `src/sleef/sleef_special.cpp` (DD-Horner
-on the `log Γ(1+z)` and `log Γ(2+z)` series, DLMF §5.7.3, with windows
-`|x-1| ≤ 0.25` and `|x-2| ≤ 0.5`); the sweep graduated to
-`tests/mpfr/test_mpfr_diff.cpp` at `GAMMA` tier.
+`sf64_lgamma` and `sf64_lgamma_r` use SLEEF's shared `gammak` kernel and
+reconstruct the result as `clc + log(abs(div))` in double-double arithmetic.
+The central region uses branch-selected polynomials; larger positive inputs
+use recurrence shifting and a Stirling-form tail. MPFR gates the near-zero
+region `[0.5, 3]` at GAMMA and the `[3, 1e4]` tail at U10.
 
 "Bit-exact" means every output matches an independent IEEE oracle in every
 bit for the tested corpus, including signed zeros, subnormals, NaNs, and
@@ -275,8 +245,8 @@ the exhaustive and randomized oracle scopes are stated explicitly above.
 
 ## Performance
 
-The self-contained harness in `bench/bench_soft_fp64.cpp` measures every
-public fp64 operation. Performance depends strongly on the compiler and
+The harness in `bench/bench_soft_fp64.cpp` measures selected binary64
+operations. Performance depends strongly on the compiler and
 target, so this document does not publish portable timing claims. The
 committed `bench/baseline.json` is an Apple M-series CI regression baseline,
 not a cross-platform benchmark result. See `bench/README.md` for reproducible
@@ -321,8 +291,9 @@ corpora and harnesses.
 
 ## Rounding modes
 
-The default `sf64_*` entry points round to nearest, ties-to-even (RNE).
-Every round-affected op also has a `_r`-suffixed variant that takes an
+Core arithmetic defaults to nearest, ties-to-even (RNE); integer narrowing
+defaults to truncation toward zero. Operations with an explicit rounding-mode
+API provide an `_r`-suffixed variant that takes an
 explicit mode from `include/soft_fp64/rounding_mode.h` (matching
 IEEE-754 §4.3):
 
@@ -335,11 +306,11 @@ double r = sf64_rint_r(SF64_RDN, -0.5);                       // -1.0
 ```
 
 Mode enum values: `SF64_RNE`, `SF64_RTZ`, `SF64_RUP`, `SF64_RDN`,
-`SF64_RNA`. Every `_r` entry is bit-exact against MPFR 200-bit and
-Berkeley TestFloat 3e in every mode. Ops whose result does not depend
-on the rounding attribute (`neg`, `fabs`, `copysign`, compares,
-`ldexp`, `frexp`, classify, `fmod`, `remainder`) have no `_r` form
-by design.
+`SF64_RNA`. The per-mode core tests compare result bits and flags with MPFR
+and TestFloat. `neg`, `fabs`, `copysign`, comparisons, `frexp`, classification,
+`fmod`, and `remainder` have no `_r` form. `ldexp` also has no `_r` form in
+this API: it uses RNE when scaling loses bits at the subnormal boundary and
+returns signed infinity on overflow.
 
 ## IEEE exception flags
 
@@ -429,9 +400,10 @@ boundary between a SIMD-friendly API and target-specific native vector code.
 
 ## Release provenance
 
-Each GitHub release publishes an annotated version tag, reproducible tagged-
+The release procedure requires an annotated version tag, reproducible tagged-
 source archives, a SHA-256 manifest, generated API documentation, and an SPDX
-SBOM. See `RELEASING.md` for the release and verification procedure.
+SBOM. See `RELEASING.md` for the publication and verification steps; inspect a
+specific release's assets for its available artifacts.
 
 ## License + attribution
 

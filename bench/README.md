@@ -43,13 +43,12 @@ Flags:
 ## Regression gate (`compare.py`)
 
 `compare.py` is a stdlib-only Python 3.10+ script. It compares a fresh JSON
-run against the committed baseline and exits non-zero if any op is slower
-by more than the threshold.
+run against the committed baseline. Exit status is 0 for a valid comparison
+with no regressions, 1 for a regression, and 2 for invalid or incomplete input.
 
 ```bash
 ./build/bench/bench_soft_fp64 --json > /tmp/current.json
 python3 bench/compare.py /tmp/current.json bench/baseline.json --threshold=0.05
-echo $?   # 0 == no regressions, 1 == at least one op regressed
 ```
 
 Output is a Markdown table sorted by `abs(delta)`, with regressions and
@@ -58,10 +57,22 @@ improvements called out separately. The gate:
 - matches ops by `name`;
 - skips ops whose baseline `ns_per_op` is below a 2 ns noise floor
   (sub-2ns timings swing too much run-to-run to be a reliable signal);
-- treats ops missing from `current` as a note (not a failure) so you can
-  run `--filter` subsets without tripping the gate;
+- requires every baseline operation in the current run, including operations
+  below the noise floor;
+- rejects empty runs, malformed rows, duplicate names, and non-finite or
+  non-positive `ns_per_op` values in either input;
 - treats ops present in `current` but not in `baseline` as informational
   ("new op").
+
+For a filtered local comparison, pass `--allow-partial`. It still requires
+valid data and at least one operation shared with the baseline, reports omitted
+operations, and labels success as a partial comparison. Do not use this option
+in CI:
+
+```bash
+./build/bench/bench_soft_fp64 --filter=log --json > /tmp/log.json
+python3 bench/compare.py /tmp/log.json bench/baseline.json --allow-partial
+```
 
 ### CI usage
 
@@ -71,53 +82,50 @@ One-shot in CI:
 cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DSOFT_FP64_BUILD_BENCH=ON
 cmake --build build --target bench_soft_fp64 -j
 ./build/bench/bench_soft_fp64 --json --min-time-ms=500 > current.json
-python3 bench/compare.py current.json bench/baseline.json --threshold=0.10
+python3 bench/compare.py current.json bench/baseline.json \
+  --threshold=0.20 --cheap-op-absolute-budget=5.0
 ```
 
-A 10% threshold is a reasonable default for shared CI runners (which
-share cores with other jobs and thermally throttle). On a quiet local
-machine 5% is tight enough to catch real regressions.
+The PR-only `bench-regression` job runs on `macos-14`. It uses a 20% threshold
+and permits an absolute increase of at most 5 ns for operations whose baseline
+is below 15 ns. Operations at or above 15 ns use only the percentage gate;
+operations below the 2 ns noise floor remain excluded from timing comparisons.
+
+The script defaults to 5% with no absolute budget. `scripts/pre_push.sh` uses
+10% with no absolute budget when a current snapshot is available; without one,
+it prints instructions and skips benchmarking. A successful pre-push run alone
+does not establish benchmark parity. Branch and tag CI do not run the PR-only
+benchmark job, so release validation must also run the comparison explicitly.
 
 ## Updating `baseline.json`
 
-Only update the baseline when the change is **legitimate**:
+Update a baseline only for a reviewed hardware change, an intentional
+performance change, or a benchmark methodology change. Investigate regressions
+before proposing a replacement; changing thresholds or replacing measurements
+to hide a slowdown is not a fix.
 
-- the host hardware changed (new CI runner image, new dev machine);
-- an intentional, reviewed perf change landed (documented in the PR);
-- the bench harness itself changed (new op added, methodology fixed).
+The committed baseline records hardware, OS, compiler, build type, and sampling
+method in its `environment` object. Its Apple M2 Max measurements are not a
+claim that every `macos-14` runner is the same machine.
 
-Do **not** update the baseline to silence a regression on unchanged code.
-If `compare.py` fails, the fix is in the library, not the baseline.
+For a proposed refresh:
 
-Procedure:
+1. Use the same Release and fenv configuration as the gate. Close other heavy
+   processes and keep the machine powered and thermally stable.
+2. Collect three isolated runs at 1000 ms per operation, saving each original
+   JSON file. Use a fresh directory so older measurements cannot enter the set.
+3. Compare the runs to inspect their spread and compare each against the old
+   baseline. Investigate inconsistent results before selecting a replacement.
+4. For consistency with the committed method, select the minimum `ns_per_op`
+   row for each operation across those three runs. This estimates the least
+   interrupted observed execution; it does not estimate typical shared-runner
+   latency. Keep the other fields from that same row.
+5. Preserve the schema and add current `environment` metadata, including the
+   fenv mode and the exact sampling method. Attach the original runs and a
+   rationale to the review. Do not mix results from different machines or
+   configurations into one baseline.
 
-```bash
-# 1. Close other heavy processes. Plug in (laptops throttle on battery).
-# 2. Run 3x, keep the best (min ns/op per op is the most stable point
-#    estimate — see "take min of k runs" in any perf-methodology doc).
-for i in 1 2 3; do
-  ./build/bench/bench_soft_fp64 --json --min-time-ms=1000 > /tmp/run.$i.json
-done
-
-# 3. Merge (stdlib, trivial):
-python3 - <<'PY'
-import json, glob
-runs = [json.load(open(p)) for p in sorted(glob.glob('/tmp/run.*.json'))]
-best = {}
-for r in runs:
-    for op in r['results']:
-        prev = best.get(op['name'])
-        if prev is None or op['ns_per_op'] < prev['ns_per_op']:
-            best[op['name']] = op
-out = {'schema': 'soft-fp64.bench.v1',
-       'results': [best[k] for k in sorted(best)]}
-print(json.dumps(out, indent=2))
-PY
-# 4. Review the diff vs the old baseline; commit with an explanation.
-```
-
-Record in the commit message which machine produced the numbers
-(e.g. "Apple M3 Max, macOS 15.2, clang 18.1.8, Release").
+No baseline update is required for documentation or checker changes.
 
 ## Comparative bench (`bench_compare`)
 
@@ -161,7 +169,7 @@ a comparable transcendental surface. FMA on `soft_double` is emulated as
 ### CI
 
 The `comparative-bench` job runs on macOS on `workflow_dispatch` and on
-tag pushes (`v*`). It uploads `compare.json` as a workflow artifact and,
-on tag pushes, attaches it to the GitHub Release. It is **not** a
-regression gate — the numbers are informational and will drift with
-upstream vendor updates.
+tag pushes (`v*`). It uploads `compare.json` as a workflow artifact; there is
+no automatic GitHub Release attachment step. It is not a regression gate.
+Record the vendor revisions and host configuration when using these measurements
+for a performance comparison.

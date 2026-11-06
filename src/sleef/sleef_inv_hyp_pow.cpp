@@ -408,7 +408,7 @@ SF64_HIDDEN SF64_SLEEF_NOINLINE DD sf64_internal_expk2_dd(DD d, sf64_internal_fe
 }
 
 // log(DD) → DD. Port of SLEEF 3.6 sleefdp.c::logk2 (lgamma_u1 calls it on
-// the absolute value of the Lanczos quotient).
+// the absolute value of gammak.div).
 //
 // Reduction: e = ilogb(d.hi * 4/3); m = d / 2^e; x = (m-1)/(m+1).
 //   log(d) = e·log(2) + 2x·(1 + x²·P(x²))

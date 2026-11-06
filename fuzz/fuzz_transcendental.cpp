@@ -5,26 +5,19 @@
 // a byte of the input — this keeps each call self-contained so libFuzzer's
 // coverage-guided mutation can evolve per-op corpora.
 //
-// Tolerance strategy: the ULP-1 regression test (test_transcendental_1ulp.cpp)
+// Tolerance strategy: the supplemental libm test (test_transcendental_libm.cpp)
 // and the MPFR differential harness cover accuracy.  Here we only trap on
-//   * not-a-valid-IEEE-754 bit-pattern (by construction, impossible — any
-//     64-bit value is valid — but we still sanity-check the exponent/mantissa
-//     isn't corrupted by a wild pointer scribble),
 //   * NaN/Inf *divergence* from libm on finite inputs where libm is not NaN,
 //   * log/sqrt of negative not returning NaN,
 //   * exp(+inf) not returning +inf,
 //   * ULP differences exceeding 2^20.
 //
 // Why 2^20 is the ULP budget (not U10=4 / U35=8 / GAMMA=1024):
-//   libFuzzer corpora routinely probe inputs where libm's extended-precision
-//   path diverges from a single-double Cody-Waite implementation by
-//   thousands of ULP — that's a precision limitation of the spec tier,
-//   not a bug. Running the *crash-hunting* fuzzer at the release tier
-//   would raise ~continuous noise from those regimes and mask real
-//   structural breaks (wild pointer scribble, UB-hit subnormal path,
-//   sign-flip regression). Precision regressions are caught by
-//   test_transcendental_1ulp.cpp and tests/mpfr/test_mpfr_diff.cpp,
-//   which run at the correct tier.
+//   This harness samples arbitrary bit patterns, including inputs outside
+//   the bounded accuracy sweeps, and compares against platform libm. The
+//   loose budget detects large result differences without making a release
+//   accuracy claim. The tighter, independent MPFR gates remain in
+//   tests/mpfr/test_mpfr_diff.cpp; the libm test supplements them.
 
 #include <soft_fp64/soft_f64.h>
 

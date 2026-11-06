@@ -1,22 +1,9 @@
 #!/usr/bin/env python3
-"""README sweep-claim parity check.
+"""Check the README's named power sweeps against executable MPFR call sites.
 
-Every numeric coverage window claimed in README.md (e.g. ``x ∈ [1e-100,
-1e100]``, ``y ∈ [-5, 5]``) must be traceable to a sweep call site in
-the test source. The reviewer that prompted this guard found that the
-"x-wide: x ∈ [1e-100, 1e100]" claim was paired with a linear sweep that
-sampled almost exclusively at ~1e100 — the lower 99 decades were
-unexercised, so the README claim was not actually tested.
-
-This script does not check sampling strategy (the trivial-match gate in
-``record()`` does that). It checks that the (lo, hi) numbers quoted in
-the README appear, as a numeric pair in that order and in proximity, in
-the test source. Numbers are normalised before matching so that ``-50``
-in the README matches ``-50.0`` in the source.
-
-Failures are printed with ``file:line`` for both the README claim and
-the proximity-search target, suitable for prek hook output. Exit
-non-zero on any unmatched claim.
+This intentionally supports the three documented power sweeps, not arbitrary
+C++ or every numerical statement in the README. It checks operation, oracle,
+tier, sampling, bounds, and sample count; comments cannot satisfy a claim.
 """
 
 from __future__ import annotations
@@ -26,119 +13,107 @@ import sys
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parent.parent
-README = REPO / "README.md"
-TEST_SOURCES = [
-    REPO / "tests" / "mpfr" / "test_mpfr_diff.cpp",
-    REPO / "tests" / "test_coverage_mpfr.cpp",
-    REPO / "tests" / "test_transcendental_1ulp.cpp",
-]
-
-# Capture `[lo, hi]` after an `x ∈ ` / `y ∈ ` / `x in ` / `y in ` lead.
-# Numbers may be in scientific notation (1e-100, -5e+5), decimal
-# (-50.0), integer (-50), or include sign.
 NUM = r"-?(?:\d+\.\d*|\d*\.\d+|\d+)(?:[eE][-+]?\d+)?"
-CLAIM = re.compile(
-    r"[`*]?[xy]\b\s*(?:∈|in)\s*\[\s*(" + NUM + r")\s*,\s*(" + NUM + r")\s*\]",
-)
+NAMES = ("pow", "pow-xbig", "pow-ybig")
 
 
-def normalise(token: str) -> float:
-    return float(token)
+def code_without_comments(source: str) -> str:
+    # Preserve quoted text so URLs and comment-like strings are not stripped.
+    token = r'"(?:\\.|[^"\\])*"|\'(?:\\.|[^\'\\])*\'|//[^\n]*|/\*[\s\S]*?\*/'
+    return re.sub(token, lambda m: " " if m[0].startswith(("//", "/*")) else m[0], source)
 
 
-def number_appears_in(source: str, value: float) -> list[int]:
-    """Return line numbers in `source` containing `value` (as a number)."""
-    hits: list[int] = []
-    pattern = re.compile(r"-?(?:\d+\.\d*|\d*\.\d+|\d+)(?:[eE][-+]?\d+)?")
-    for lineno, line in enumerate(source.splitlines(), start=1):
-        for token in pattern.findall(line):
-            try:
-                if normalise(token) == value:
-                    hits.append(lineno)
-                    break
-            except ValueError:
-                pass
-    return hits
+def constant(source: str, declaration: str) -> int:
+    matches = re.findall(declaration, source)
+    if len(matches) != 1:
+        raise ValueError("missing or ambiguous constant: " + declaration)
+    return int(matches[0])
 
 
-def find_pair_in_proximity(
-    source_path: Path, source_text: str, lo: float, hi: float, window: int = 4
-) -> tuple[int, str] | None:
-    """True if both `lo` and `hi` appear within `window` lines of each
-    other in `source_text`, with `lo` preceding `hi` (matches a typical
-    `sweep2(..., lo, hi, …)` argument list)."""
-    lo_lines = number_appears_in(source_text, lo)
-    hi_lines = number_appears_in(source_text, hi)
-    for la in lo_lines:
-        for lb in hi_lines:
-            if 0 <= lb - la <= window:
-                # Show both lines for context.
-                lines = source_text.splitlines()
-                snippet = "\n".join(
-                    f"      {source_path.name}:{n}: {lines[n - 1].rstrip()}"
-                    for n in range(la, lb + 1)
-                    if 1 <= n <= len(lines)
-                )
-                return (la, snippet)
-    return None
+def read_sweeps(source: str) -> dict[str, list[str]]:
+    code = code_without_comments(source)
+    precision = constant(code, r"constexpr\s+mpfr_prec_t\s+ORACLE_PREC\s*=\s*(\d+)\s*;")
+    count = constant(code, r"constexpr\s+int\s+N_RAND\s*=\s*(\d+)\s*;")
+    tier = constant(code, r"\bU35\s*=\s*(\d+)\s*,")
+    if not re.search(r"constexpr\s+Tier\s+U35\s*=\s*Tier::U35\s*;", code):
+        raise ValueError("U35 alias must refer to the release tier")
+    sweeps = {}
+    for name in NAMES:
+        # Deliberately match a registered call and its real lambda/oracle, not
+        # nearby numbers. Changes to this supported call form require review.
+        pattern = (
+            r'results\s*\.\s*push_back\s*\(\s*(sweep2_log_uniform|sweep2_log)\s*\('
+            + r'\s*"' + re.escape(name) + r'"\s*,\s*U35\s*,\s*'
+            + r'\[\]\s*\(\s*double\s+x\s*,\s*double\s+y\s*\)\s*'
+            + r'\{\s*return\s+sf64_pow\s*\(\s*x\s*,\s*y\s*\)\s*;\s*\}\s*,\s*mpfr_pow\s*,'
+            + r'\s*(' + NUM + r')\s*,\s*(' + NUM + r')\s*,\s*false\s*,'
+            + r'\s*(' + NUM + r')\s*,\s*(' + NUM + r')'
+            + r'\s*(,\s*true)?\s*(?:,\s*0x[0-9a-fA-F]+ULL)?\s*\)\s*\)\s*;'
+        )
+        matches = list(re.finditer(pattern, code))
+        if len(matches) != 1:
+            raise ValueError(f"{name}: expected one registered sf64_pow / mpfr_pow sweep")
+        method, xlo, xhi, ylo, yhi, signed = matches[0].groups()
+        if (method == "sweep2_log") != bool(signed):
+            raise ValueError(f"{name}: unsupported sign policy")
+        # Verify the named driver uses the advertised loop and samplers.
+        driver = re.search(r"Stats\s+" + method + r"\([^{}]+\)\s*\{([\s\S]*?)\n\}", code)
+        body = re.sub(r"\s+", "", driver[1]) if driver else ""
+        required = ["for(inti=0;i<N_RAND;++i)", "rng.log_uniform(xlo_abs,xhi_abs)",
+                    "record(s,x,y,soft(x,y),ref2(mref,x,y));"]
+        required += (["rng.log_uniform(ylo_abs,yhi_abs)", "if(y_sym&&(rng.next()&1))y=-y;"]
+                     if signed else ["rng.uniform(ylo,yhi)"])
+        if any(fragment not in body for fragment in required):
+            raise ValueError(f"{name}: driver sampling/count changed; review its README contract")
+        sweeps[name] = ["log", f"[{xlo}, {xhi}]", "signed log" if signed else "uniform",
+                        f"[{ylo}, {yhi}]", f"U35 ({tier} ULP)", f"MPFR ({precision} bits)", str(count)]
+    return sweeps
+
+
+def range_values(text: str) -> tuple[float, float] | None:
+    match = re.fullmatch(r"\[\s*(" + NUM + r")\s*,\s*(" + NUM + r")\s*\]", text)
+    return tuple(map(float, match.groups())) if match else None
+
+
+def check(readme: str, source: str) -> list[str]:
+    try:
+        sweeps = read_sweeps(source)
+    except ValueError as error:
+        return [f"tests/mpfr/test_mpfr_diff.cpp: {error}"]
+    rows: dict[str, list[tuple[int, list[str]]]] = {name: [] for name in NAMES}
+    for line_no, line in enumerate(readme.splitlines(), 1):
+        if not line.lstrip().startswith("|"):
+            continue
+        fields = [field.strip().strip("`") for field in line.strip().strip("|").split("|")]
+        if fields and fields[0] in rows:
+            rows[fields[0]].append((line_no, fields[1:]))
+    failures = []
+    for name, expected in sweeps.items():
+        if len(rows[name]) != 1:
+            failures.append(f"README.md: expected exactly one power-sweep table row for {name}")
+            continue
+        line_no, actual = rows[name][0]
+        if len(actual) != len(expected):
+            failures.append(f"README.md:{line_no}: {name}: expected seven contract fields")
+            continue
+        for index, (got, want) in enumerate(zip(actual, expected)):
+            equal = range_values(got) == range_values(want) if index in (1, 3) else got == want
+            if not equal:
+                failures.append(f"README.md:{line_no}: {name}: expected {want!r}, found {got!r}")
+    return failures
 
 
 def main() -> int:
-    if not README.exists():
-        print(f"README.md not found at {README}", file=sys.stderr)
+    try:
+        failures = check((REPO / "README.md").read_text(encoding="utf-8"),
+                         (REPO / "tests/mpfr/test_mpfr_diff.cpp").read_text(encoding="utf-8"))
+    except OSError as error:
+        print(f"check_readme_claim_parity: {error}", file=sys.stderr)
         return 2
-
-    readme_text = README.read_text(encoding="utf-8")
-    sources = {p: p.read_text(encoding="utf-8") for p in TEST_SOURCES if p.exists()}
-    if not sources:
-        print("No test sources to check parity against.", file=sys.stderr)
-        return 2
-
-    failures: list[str] = []
-    checked = 0
-
-    for lineno, line in enumerate(readme_text.splitlines(), start=1):
-        for match in CLAIM.finditer(line):
-            checked += 1
-            lo_token, hi_token = match.group(1), match.group(2)
-            try:
-                lo = normalise(lo_token)
-                hi = normalise(hi_token)
-            except ValueError:
-                continue
-            found_in: list[str] = []
-            for path, text in sources.items():
-                hit = find_pair_in_proximity(path, text, lo, hi)
-                if hit is not None:
-                    found_in.append(f"{path.relative_to(REPO)}:{hit[0]}")
-            if not found_in:
-                failures.append(
-                    f"README.md:{lineno}: [{lo_token}, {hi_token}] — no test "
-                    f"source contains this pair as adjacent sweep arguments."
-                    f"\n      claim: {line.strip()}"
-                )
-
     if failures:
-        print(
-            f"check_readme_claim_parity: {len(failures)} unmatched claim(s) "
-            f"out of {checked}.",
-            file=sys.stderr,
-        )
-        for f in failures:
-            print("  " + f, file=sys.stderr)
-        print(
-            "\n  Each README sweep window must appear as adjacent (lo, hi) "
-            "arguments in a test sweep call. Either fix the README to match "
-            "the test code or fix the test code to match the README — do "
-            "not let the two diverge.",
-            file=sys.stderr,
-        )
+        print("\n".join(failures), file=sys.stderr)
         return 1
-
-    print(
-        f"check_readme_claim_parity: clean ({checked} README claims, all "
-        f"matched in test source)."
-    )
+    print("check_readme_claim_parity: three named power sweeps match their MPFR contracts")
     return 0
 
 

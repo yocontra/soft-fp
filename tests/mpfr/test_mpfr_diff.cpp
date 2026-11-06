@@ -1,24 +1,10 @@
-// MPFR arbitrary-precision differential oracle for every sf64_*
-// transcendental.
+// MPFR differential tests for binary64 operations and transcendentals.
+// Transcendental references use 200-bit MPFR, then round to binary64.
+// The supplementary test_transcendental_libm suite uses platform libm.
 //
-// The existing `test_transcendental_1ulp.cpp` compares sf64 results against
-// the host's libm. That only catches bugs up to the host's own ULP budget
-// (libm is typically 1-3 ULP, occasionally worse). This test compares
-// against MPFR at 200 bits, rounded to double with RNDN. At that precision,
-// a double-precision round-to-nearest-even MPFR result is indistinguishable
-// from the mathematically correct rounded value, so any observed ULP delta
-// is a bug in soft-fp64 — not in the oracle.
-//
-// Tolerance bands per task spec (strictly tighter than the libm-diff tier):
-//   U10  (sin/cos/exp/log/pow/...)            ≤ 4    ULP
-//   U35  (tan/sinh/asinh/pow edge/...)        ≤ 8    ULP
-//   GAMMA (reserved — currently unused on shipped surface)  ≤ 1024 ULP
-//   (post-1.1: erf/erfc/tgamma/lgamma moved to U10 after the SLEEF u1
-//    port in src/sleef/sleef_special.cpp)
-// Input ranges mirror the validated domains used by test_transcendental_1ulp
-// where applicable. Where MPFR supports a tighter oracle (e.g. *pi variants)
-// we also run the corresponding sweep. Every registered range is enforcing;
-// there is no report-only experimental suite.
+// Release tolerance tiers: BIT_EXACT (0 ULP), U10 (4 ULP), U35 (8 ULP),
+// and GAMMA (1024 ULP for lgamma zero crossings). Each sweep below names
+// its tier, oracle, and input range. Every registered sweep is enforcing.
 //
 // The `ulp_diff` helper is copied here rather than factored to a shared
 // header so the oracle stays self-contained in tests/mpfr/.
@@ -652,10 +638,8 @@ inline double ref_rint_r(double x, sf64_rounding_mode m) {
 
 // ---------- Tolerance tiers -----------------------------------------------
 //
-// Hard-fail bands from the task spec. `enum class` so a stray integer (or a
-// `numeric_limits<int64_t>::max()` sentinel) is a type error rather than an
-// escape hatch. New tiers require a public spec entry — not a tolerance bump
-// to paper over a regression.
+// Named release bounds. Strong typing prevents passing arbitrary integer
+// tolerances to a sweep; changes require a documented accuracy contract.
 enum class Tier : int64_t {
     BIT_EXACT = 0,
     U10 = 4,
@@ -920,8 +904,8 @@ Stats sweep_pown(const char* name, Tier tier) {
     return s;
 }
 
-// rootn: positive x, small integer n (rootn of negative x is impl-defined
-// for even n and we leave that to unit tests).
+// rootn: positive x and small integer n. Negative inputs with even n
+// return NaN and are outside this finite-result sweep.
 Stats sweep_rootn(const char* name, Tier tier) {
     Stats s;
     s.name = name;
@@ -1243,7 +1227,7 @@ int main() {
                                                                   0xB640000ULL + mrow.mode));
     }
 
-    // Input ranges mirror test_transcendental_1ulp where that test validates
+    // Input ranges mirror test_transcendental_libm where that test validates
     // a range. MPFR permits tighter oracles (e.g. *pi variants, exp10) so we
     // extend coverage where possible.
     //
@@ -1259,7 +1243,7 @@ int main() {
     results.push_back(
         sweep1_log("cos", U10, [](double x) { return sf64_cos(x); }, mpfr_cos, 1e-6, 100.0, true));
     // sincos: independent U10 oracle for both outputs against MPFR. The
-    // consistency-only check in test_transcendental_1ulp.cpp (sincos vs
+    // consistency-only check in test_transcendental_libm.cpp (sincos vs
     // sf64_sin/sf64_cos) can't catch a joint reduction bug that shifts both
     // legs the same way; MPFR is the real referee. Same seed for s and c so
     // both sweeps hit the identical input corpus — any per-leg discrepancy
@@ -1352,30 +1336,22 @@ int main() {
     results.push_back(sweep1_log(
         "log1p", U10, [](double x) { return sf64_log1p(x); }, mpfr_log1p, 1e-10, 1e10, false));
 
-    // --- Power / root: U35 (pow per task spec "pow edge") ----------------
+    // --- Power / root: U35 ---------------------------------------------
     //
     // pow is exercised on three overlapping windows that together bound the
     // U35 claim:
     //   "pow"         — moderate: x∈[1e-6, 1e6], y∈[-50, 50]   (main claim)
-    //   "pow-xbig"    — x wide, y modest: x∈[1e-100, 1e100], y∈[-5, 5]
+    //   "pow-xbig"    — x wide, y modest: x∈[1e-100, 1e100], |y|∈[1e-5, 5]
     //   "pow-ybig"    — x modest, y wide: x∈[1e-6, 1e3], y∈[-100, 100]
-    // The log tail uses the DD-Horner rewrite landed in v1.1, so measured
-    // worst-case is inside U10 across the wider double range; U35 remains
-    // the release gate for these overlapping bounded windows.
     // x log-sampled across 12 decades (positive only — pow with negative
     // base + non-integer y returns NaN, which would dominate trivial
     // matches); y is a narrow linear range so linear sampling is fine.
     results.push_back(sweep2_log_uniform(
         "pow", U35, [](double x, double y) { return sf64_pow(x, y); }, mpfr_pow, 1e-6, 1e6,
         /*x_sym=*/false, -50.0, 50.0));
-    // pow-xbig: x log-uniform across 200 decades, y log-uniform in
-    // [1e-5, 5] with random sign so negative y is exercised. Linear
-    // sampling here would concentrate 99%+ of x samples near 1e100 and
-    // 99%+ of y samples near ±5, so pow overflows / underflows on
-    // almost every input and the sweep never exercises its advertised
-    // range. y=0 exactly is out of the log-uniform support; the zero
-    // cases are owned by tests/test_powr_ieee754.cpp (for powr) and by
-    // the boundary-aware impl.
+    // pow-xbig samples x and |y| logarithmically so small magnitudes are
+    // represented alongside large ones. Random signs exercise both signs
+    // of y; |y| < 1e-5 is outside this sweep, including y == 0.
     results.push_back(sweep2_log(
         "pow-xbig", U35, [](double x, double y) { return sf64_pow(x, y); }, mpfr_pow, 1e-100, 1e100,
         /*x_sym=*/false, 1e-5, 5.0, /*y_sym=*/true, 0xA110CA7EULL));
@@ -1392,18 +1368,13 @@ int main() {
         /*x_sym=*/false, -50.0, 50.0));
     results.push_back(sweep_pown("pown", U35));
     results.push_back(sweep_rootn("rootn", U35));
-    // cbrt across the full double range including subnormals.
+    // cbrt magnitudes from the smallest subnormal through 1e300, with both signs.
     results.push_back(sweep1_log(
         "cbrt", U10, [](double x) { return sf64_cbrt(x); }, mpfr_cbrt,
         std::numeric_limits<double>::denorm_min(), 1e300, true));
 
     // --- Error / gamma: U10 tier ----------------------------------------
-    // post-1.1: erf / erfc / tgamma / lgamma rebased onto SLEEF 3.6 u1
-    // (xerf_u1, xerfc_u15, xtgamma_u1, xlgamma_u1) using the existing DD
-    // primitives. Measured max_ulp = 1 across the gated sweeps below
-    // (vs MPFR @ 200 bits). The Horner-vs-Estrin tradeoff documented in
-    // src/sleef/sleef_special.cpp may add ≤ a few ULP under future
-    // recompilations; U10 (≤4 ULP) leaves comfortable headroom.
+    // SLEEF-derived special functions, checked against 200-bit MPFR.
     results.push_back(
         sweep1_uniform("erf", U10, [](double x) { return sf64_erf(x); }, mpfr_erf, -5.0, 5.0));
     // erfc across the active range including the deep tail: the SLEEF
@@ -1413,18 +1384,12 @@ int main() {
     // implementation needed.
     results.push_back(
         sweep1_uniform("erfc", U10, [](double x) { return sf64_erfc(x); }, mpfr_erfc, -5.0, 27.0));
-    // tgamma through the overflow boundary (x ≈ 171.6).  The SLEEF gammak
-    // (Stirling form for x > 2.3 plus the rising-factorial denominator for
-    // 2.3 < x ≤ 7) keeps the near-overflow bucket at 1 ULP.
+    // Positive tgamma inputs below the overflow boundary (x approximately 171.6).
     results.push_back(sweep1_uniform(
         "tgamma", U10, [](double x) { return sf64_tgamma(x); }, mpfr_gamma, 0.5, 170.0));
-    // lgamma over the full positive shippable range, in two pieces:
-    //   * `lgamma_zeros` — uniform [0.5, 3.0]. SLEEF u1 covers absolute
-    //     error inside U10 across this range, but the ULP ratio is
-    //     unbounded as |lgamma| → 0 at x=1, x=2. Gate at GAMMA so the
-    //     zero-crossing region still gets corpus coverage.
-    //   * `lgamma` — log-spaced [3, 1e4], the zero-free tail; tightened
-    //     to U10 with the SLEEF u1 port.
+    // lgamma uses GAMMA on [0.5, 3], including its zeros at 1 and 2,
+    // and U10 on the zero-free [3, 1e4] tail. A fixed absolute error
+    // corresponds to more ULPs as the result approaches zero.
     results.push_back(sweep1_uniform(
         "lgamma_zeros", GAMMA, [](double x) { return sf64_lgamma(x); }, mpfr_lngamma, 0.5, 3.0));
     results.push_back(sweep1_log(

@@ -1,13 +1,10 @@
 // Validate sf64_* transcendentals against host libm.
 //
-// Tolerance tiers:
-//   u10  — ≤ 1 ULP (sin, cos, exp, log, pow, cbrt)
-//   u35  — ≤ 3.5 ULP (tan, sinh, …)
-//   loose — ≤ 256 ULP (tgamma near poles, very large arguments)
-//
-// The host-FPU reference is the system `<cmath>` implementation. This is
-// explicitly OK in the *test*: we want to see how close our soft
-// implementation gets to a known-good libm oracle.
+// This supplementary differential test uses the platform's libm as its
+// reference. Each call site states its limit; the large-angle stress check
+// uses 64 ULP, while ordinary sweeps use four or eight ULP.
+// The independent MPFR tests define the release accuracy gates, including
+// the lgamma zero-crossing range that is not checked against libm here.
 //
 // SPDX-License-Identifier: MIT
 
@@ -231,17 +228,9 @@ int main() {
     // We are intentionally loose-ish compared to SLEEF upstream because we
     // use a degree-reduced polynomial + single-double arithmetic in places.
 
-    // Tolerance bands — match the documented MPFR buckets exactly.
-    //   U10   — functions that land ≤1 ULP on sweep (most), including
-    //           erf / tgamma / lgamma after the post-1.1 SLEEF u1 port.
-    //   U35   — functions that land ≤2 ULP (tan, sinh, tanh, asinh, pow,
-    //           *pi-suffixed inverse trig). Also gates erfc here vs host
-    //           libm because libm's own erfc ships at u15.
-    //   GAMMA — reserved (currently unused on the shipped surface).
+    // Libm comparison limits; the MPFR suite separately checks release tiers.
     constexpr int64_t U10 = 4;
     constexpr int64_t U35 = 8;
-    constexpr int64_t GAMMA = 1024;
-    (void)GAMMA; // MPFR owns the lgamma zero-crossing GAMMA-tier gate.
 
     std::printf("\n[u10 sweeps]\n");
 
@@ -340,7 +329,7 @@ int main() {
         REQUIRE_ULP(sp, U35);
     }
 
-    std::printf("\n[C.5-4: π-scaled inverse trig]\n");
+    std::printf("\n[π-scaled inverse trig]\n");
     auto wrap_asinpi = [](double x) { return sf64_asinpi(x); };
     auto wrap_acospi = [](double x) { return sf64_acospi(x); };
     auto wrap_atanpi = [](double x) { return sf64_atanpi(x); };
@@ -354,7 +343,7 @@ int main() {
     auto s_atanpi = sweep("atanpi", wrap_atanpi, ref_atanpi, 1e-6, 1e6, 10000);
     REQUIRE_ULP(s_atanpi, U35);
 
-    std::printf("\n[C.5-4: atan2pi random (y,x)]\n");
+    std::printf("\n[atan2pi random (y,x)]\n");
     {
         Stats s2;
         LCG rng(0xA71A2BEEFULL);
@@ -377,7 +366,7 @@ int main() {
         REQUIRE_ULP(s2, U35);
     }
 
-    std::printf("\n[C.5-4: rootn]\n");
+    std::printf("\n[rootn]\n");
     {
         Stats sr;
         LCG rng(0xBEEF2U);
@@ -398,7 +387,7 @@ int main() {
         REQUIRE_ULP(sr, U10);
     }
 
-    std::printf("\n[C.5-4: erf / erfc]\n");
+    std::printf("\n[erf / erfc]\n");
     {
         auto wrap_erf = [](double x) { return sf64_erf(x); };
         auto wrap_erfc = [](double x) { return sf64_erfc(x); };
@@ -439,7 +428,7 @@ int main() {
         REQUIRE_ULP(sec, U35);
     }
 
-    std::printf("\n[C.5-4: tgamma / lgamma]\n");
+    std::printf("\n[tgamma / lgamma]\n");
     {
         auto wrap_tgamma = [](double x) { return sf64_tgamma(x); };
         auto wrap_lgamma = [](double x) { return sf64_lgamma(x); };
@@ -463,8 +452,7 @@ int main() {
 
         // lgamma gated on x ≥ 3 (zero-free subrange). post-1.1: SLEEF u1
         // port; worst ~3 ULP vs host libm. The zero-crossings at x=1, x=2
-        // are gated against MPFR at GAMMA tier because the ULP ratio is
-        // unbounded as |lgamma| → 0; this host-libm sweep stays on the
+        // are gated against MPFR at GAMMA tier; this host-libm sweep stays on the
         // zero-free range.
         Stats sl;
         LCG rng2(0x1DEFFULL);
@@ -691,9 +679,8 @@ int main() {
             if (std::isfinite(p.x) && p.x != 0.0) {
                 const double lg_plain = sf64_lgamma(p.x);
                 if (std::isfinite(lg) && std::isfinite(lg_plain)) {
-                    // Only enforce the 1e-14 bound inside the stable "mid
-                    // range" (|x| ≤ 10). Outside that the task spec notes
-                    // extreme tails are reference-only.
+                    // This magnitude consistency check covers |x| <= 10.
+                    // Independent tail accuracy is checked by the MPFR suite.
                     if (std::fabs(p.x) <= 10.0 && std::fabs(lg - lg_plain) > 1e-14) {
                         std::fprintf(stderr,
                                      "FAIL: lgamma_r magnitude @ %s: r=%.17g plain=%.17g "
@@ -713,13 +700,9 @@ int main() {
 
     std::printf("\n[Payne-Hanek stress (sin/cos/tan @ k·π + δ)]\n");
     {
-        // sin/cos/tan at large multiples of π exercise Payne-Hanek argument
-        // reduction. We do not have MPFR in this TU, so we use libm as the
-        // oracle and a relaxed 64-ULP bound. This is intentionally loose:
-        //   - Host libm's Payne-Hanek is itself only a few ULP correct at
-        //     k ≈ 2^50 where catastrophic cancellation bites;
-        //   - we require "not catastrophically off", not "bit-exact". A tight
-        //     MPFR-referenced version lives in tests/test_coverage_mpfr.cpp.
+        // Supplementary large-angle comparison against host libm, with the
+        // existing 64-ULP smoke bound. Release accuracy is checked separately
+        // against MPFR at four ULP in test_coverage_mpfr.cpp.
         const double kPi = 3.14159265358979323846;
         const double ks[] = {
             std::ldexp(1.0, 40),  std::ldexp(1.0, 45),  std::ldexp(1.0, 50),

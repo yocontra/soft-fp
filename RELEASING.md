@@ -11,7 +11,7 @@ uncommitted worktree.
    version section and update its comparison links.
 3. Update the stable-version statement in `README.md` and the supported lines
    in `SECURITY.md` when appropriate.
-4. Run the complete local matrix:
+4. Run the local Release preflight:
 
    ```bash
    cmake -S . -B build-release -DCMAKE_BUILD_TYPE=Release
@@ -22,8 +22,10 @@ uncommitted worktree.
    doxygen Doxyfile
    ```
 
-5. Push the release commit and wait for every required GitHub Actions job on
-   `main` to pass.
+5. Push the release commit and wait for every required job in the
+   [CI workflow](.github/workflows/ci.yml) on `main` to pass. That matrix also
+   covers Debug builds, alternate exception modes, OpenCL/FTZ, sanitizers,
+   and supported platforms; the local preflight above does not replace it.
 
 ## Tag
 

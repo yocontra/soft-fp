@@ -1,8 +1,5 @@
-// Host-side spot checks for every SF64_FE_RAISE site wired in Track C.
-//
-// This is not a sweep — every assertion targets a single hook at a single
-// input so a regression lists an exact operation. A future oracle-driven
-// sweep (TestFloat fl2 tokens) lives in tests/testfloat/run_testfloat.cpp.
+// Exception-flag spot checks, with a named operation and input per check.
+// tests/testfloat/run_testfloat.cpp independently checks flags over its corpus.
 //
 // SPDX-License-Identifier: MIT
 

@@ -1,7 +1,6 @@
 # Berkeley TestFloat-3 oracle for soft-fp64.
 #
-# This subdirectory is lazily pulled in by `tests/CMakeLists.txt` once this
-# file exists. It builds:
+# Included by tests/CMakeLists.txt. Builds:
 #
 #   softfloat_oracle     — static lib from vendored berkeley-softfloat-3
 #   testfloat_gen        — vendor generator binary (prints hex test vectors

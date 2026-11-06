@@ -7,10 +7,8 @@
 # libFuzzer is shipped with clang; guard on compiler ID and surface a
 # helpful error if the user forgot `-DCMAKE_CXX_COMPILER=clang++`.
 #
-# The exhaustive f32<->f64 round-trip test is a plain executable wired
-# to ctest via `add_test(...)` further down — it does NOT depend on
-# libFuzzer/sanitizers, so it is always built when the fuzz subdir is
-# added.
+# The independent SOFT_FP64_BUILD_EXHAUSTIVE option is handled by the root
+# CMakeLists.txt and does not depend on this directory or libFuzzer.
 
 # ---- libFuzzer per-op targets ------------------------------------------
 #

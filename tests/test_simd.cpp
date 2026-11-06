@@ -1,6 +1,6 @@
 #include "soft_fp/simd.h"
 
-#include <cassert>
+#include "test_check.h"
 #include <cstddef>
 #include <cstdint>
 #include <type_traits>
@@ -24,8 +24,8 @@ int main() {
     double stored[8]{};
     simd::store(stored, fused);
     for (std::size_t lane = 0; lane < 8; ++lane)
-        assert(stored[lane] == sf64_fma(left_data[lane], right_data[lane],
-                                        sf64_add(left_data[lane], right_data[lane])));
+        SF_CHECK(stored[lane] == sf64_fma(left_data[lane], right_data[lane],
+                                          sf64_add(left_data[lane], right_data[lane])));
 
     simd::pack<sf64_fe_state_t, 8> states{};
     const auto quotient =
@@ -33,10 +33,10 @@ int main() {
             return sf64_div_r_ex(SF64_RNE, a, b, &states[lane]);
         });
     for (std::size_t lane = 0; lane < 8; ++lane) {
-        assert(quotient[lane] == sf64_div(left_data[lane], right_data[lane]));
+        SF_CHECK(quotient[lane] == sf64_div(left_data[lane], right_data[lane]));
         constexpr unsigned all_flags = SF64_FE_INVALID | SF64_FE_DIVBYZERO | SF64_FE_OVERFLOW |
                                        SF64_FE_UNDERFLOW | SF64_FE_INEXACT;
-        assert((states[lane].flags & ~all_flags) == 0);
+        SF_CHECK((states[lane].flags & ~all_flags) == 0);
     }
 
 #if SOFT_FP_HAS_FP128
@@ -47,7 +47,7 @@ int main() {
     const auto roundtrip128 = simd::combine(words128);
     const auto doubled128 = simd::transform(roundtrip128, roundtrip128, sf128_add);
     for (std::size_t lane = 0; lane < 4; ++lane)
-        assert(sf128_to_u64(doubled128[lane]) == 2 * (lane + 1));
+        SF_CHECK(sf128_to_u64(doubled128[lane]) == 2 * (lane + 1));
 #endif
 
 #if SOFT_FP_HAS_FP256
@@ -58,7 +58,7 @@ int main() {
     const auto roundtrip256 = simd::combine(words256);
     const auto squared256 = simd::transform(roundtrip256, roundtrip256, sf256_mul);
     for (std::size_t lane = 0; lane < 4; ++lane)
-        assert(sf256_to_u64(squared256[lane]) == (lane + 1) * (lane + 1));
+        SF_CHECK(sf256_to_u64(squared256[lane]) == (lane + 1) * (lane + 1));
 #endif
 
     return 0;

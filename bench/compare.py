@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """Compare a soft-fp64 microbench JSON run against a committed baseline.
 
-Exits 0 if no op regresses beyond the threshold, 1 otherwise.
+Exits 0 for a valid comparison with no regressions, 1 for regressions, and
+2 for invalid or incomplete input. Filtered local runs require --allow-partial.
 
 Usage:
     compare.py <current.json> <baseline.json> [--threshold=0.05]
@@ -30,6 +31,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 import sys
 from pathlib import Path
 from typing import Any
@@ -59,6 +61,10 @@ def load_results(path: Path) -> dict[str, dict[str, Any]]:
         sys.stderr.write(f"error: invalid JSON in {path}: {exc}\n")
         sys.exit(2)
 
+    if not isinstance(doc, dict):
+        sys.stderr.write(f"error: {path} must contain a JSON object\n")
+        sys.exit(2)
+
     schema = doc.get("schema")
     if schema != SCHEMA_ID:
         sys.stderr.write(
@@ -67,17 +73,32 @@ def load_results(path: Path) -> dict[str, dict[str, Any]]:
         sys.exit(2)
 
     results = doc.get("results")
-    if not isinstance(results, list):
-        sys.stderr.write(f"error: {path} missing 'results' array\n")
+    if not isinstance(results, list) or not results:
+        sys.stderr.write(f"error: {path} requires a non-empty 'results' array\n")
         sys.exit(2)
 
     by_name: dict[str, dict[str, Any]] = {}
-    for entry in results:
+    for index, entry in enumerate(results):
         if not isinstance(entry, dict):
-            continue
+            sys.stderr.write(f"error: {path} result {index} must be an object\n")
+            sys.exit(2)
         name = entry.get("name")
-        if not isinstance(name, str):
-            continue
+        if not isinstance(name, str) or not name.strip():
+            sys.stderr.write(f"error: {path} result {index} needs a non-empty name\n")
+            sys.exit(2)
+        if name in by_name:
+            sys.stderr.write(f"error: {path} contains duplicate operation {name!r}\n")
+            sys.exit(2)
+        timing = entry.get("ns_per_op")
+        try:
+            valid_timing = type(timing) in (int, float) and timing > 0 and math.isfinite(timing)
+        except OverflowError:
+            valid_timing = False
+        if not valid_timing:
+            sys.stderr.write(
+                f"error: {path} operation {name!r} needs a finite positive ns_per_op\n"
+            )
+            sys.exit(2)
         by_name[name] = entry
     return by_name
 
@@ -112,51 +133,56 @@ def main() -> int:
             "the budget still reports as a regression."
         ),
     )
+    parser.add_argument(
+        "--allow-partial",
+        action="store_true",
+        help="Allow missing baseline operations for filtered local runs (not CI).",
+    )
     args = parser.parse_args()
 
-    if args.threshold <= 0:
-        sys.stderr.write("error: --threshold must be > 0\n")
+    if not math.isfinite(args.threshold) or args.threshold <= 0:
+        sys.stderr.write("error: --threshold must be finite and > 0\n")
         return 2
 
-    if args.cheap_op_absolute_budget < 0:
-        sys.stderr.write("error: --cheap-op-absolute-budget must be >= 0\n")
+    if not math.isfinite(args.cheap_op_absolute_budget) or args.cheap_op_absolute_budget < 0:
+        sys.stderr.write("error: --cheap-op-absolute-budget must be finite and >= 0\n")
         return 2
 
     current = load_results(args.current)
     baseline = load_results(args.baseline)
+    missing_in_current = sorted(baseline.keys() - current.keys())
+    if missing_in_current and not args.allow_partial:
+        sys.stderr.write(
+            "error: current run is missing baseline operations: "
+            + ", ".join(missing_in_current)
+            + "\nUse --allow-partial only for filtered local comparisons.\n"
+        )
+        return 2
+    if not baseline.keys() & current.keys():
+        sys.stderr.write("error: current run has no operations in common with baseline\n")
+        return 2
 
     regressions: list[tuple[str, float, float, float]] = []
     improvements: list[tuple[str, float, float, float]] = []
     within: list[tuple[str, float, float, float]] = []
     exempted_cheap: list[tuple[str, float, float, float]] = []
     skipped_noise: list[str] = []
-    missing_in_current: list[str] = []
     new_ops: list[str] = []
 
     cheap_budget_enabled = args.cheap_op_absolute_budget > 0.0
 
     for name, base in baseline.items():
-        base_ns = base.get("ns_per_op")
-        if not isinstance(base_ns, (int, float)):
-            continue
+        base_ns = base["ns_per_op"]
         if name not in current:
-            missing_in_current.append(name)
             continue
         if base_ns < NOISE_FLOOR_NS:
             skipped_noise.append(name)
             continue
-        cur_ns = current[name].get("ns_per_op")
-        if not isinstance(cur_ns, (int, float)):
-            missing_in_current.append(name)
-            continue
+        cur_ns = current[name]["ns_per_op"]
         delta = (cur_ns - base_ns) / base_ns
         row = (name, base_ns, cur_ns, delta)
         if delta > args.threshold:
-            # Cheap-op carveout: only applies to ops with a sub-threshold
-            # baseline AND only when the absolute ns/op delta is within the
-            # requested budget. Belt-and-suspenders — a cheap op that
-            # breaches both the percentage and the absolute budget still
-            # reports as a regression.
+            # A cheap operation must satisfy the absolute budget to be exempt.
             if (
                 cheap_budget_enabled
                 and base_ns < CHEAP_OP_NS_THRESHOLD
@@ -268,7 +294,10 @@ def main() -> int:
         )
         return 1
 
-    out("**PASS**: no regressions beyond threshold.\n")
+    if args.allow_partial:
+        out("**PASS (partial comparison)**: no measured regressions beyond threshold.\n")
+    else:
+        out("**PASS**: no regressions beyond threshold.\n")
     return 0
 
 

@@ -1,9 +1,6 @@
 #pragma once
 
-// Soft-float IEEE-754 double-precision storage wrapper. Bit-identical to
-// `double` on little-endian targets; the wrapper exists so frontends that
-// can't use `double` directly (e.g. Metal Shading Language pre-3.0) can
-// still pass the value through.
+// Binary64 bit-pattern storage for compiler adapters.
 //
 // SPDX-License-Identifier: MIT
 
@@ -13,9 +10,7 @@
 
 namespace soft_fp64 {
 
-// IEEE-754 binary64 storage wrapper. Bit-identical to `double` on little-endian
-// targets; the wrapper exists so frontends that can't use `double` directly
-// (e.g. Metal Shading Language pre-3.0) can still pass this through.
+// Stores the IEEE-754 encoding as an integer; arithmetic uses the sf64_* ABI.
 class float64_t {
   public:
     float64_t() = default;

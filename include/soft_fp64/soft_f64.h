@@ -35,11 +35,10 @@
  *
  * @section ieee IEEE-754 conformance
  *
- * Arithmetic and convert paths are strictly conformant to IEEE-754-2008 for
- * round-affected ops under all five rounding attributes. The default
- * `sf64_*` surface is round-to-nearest-ties-to-even (RNE); rounding
- * describes the additive `sf64_*_r(mode, …)` surface for the other four
- * modes (RTZ / RUP / RDN / RNA).
+ * Core arithmetic defaults to round-to-nearest-ties-to-even (RNE), while
+ * integer narrowing defaults to truncation toward zero. The explicit
+ * `sf64_*_r(mode, …)` APIs support RNE / RTZ / RUP / RDN / RNA for the
+ * operations declared in the rounding group.
  *
  * IEEE-754 exception flags (`INVALID`, `DIVBYZERO`, `OVERFLOW`,
  * `UNDERFLOW`, `INEXACT`) are raised through the fenv surface when
@@ -343,7 +342,7 @@ double sf64_modf(double x, double* iptr);
  *  @param x input
  *  @param n exponent
  *  @return `x * 2^n` computed by direct exponent manipulation (no arithmetic).
- *  Overflow → `±inf`; underflow → correctly-rounded subnormal or `±0`. `n` is
+ *  Overflow → `±inf`; underflow → RNE-rounded subnormal or `±0`. `n` is
  *  clamped to `[-2100, 2100]` internally (outside this range the result is
  *  already inf/0 and no precision is lost). `ldexp(±0, n) = ±0`,
  *  `ldexp(±inf, n) = ±inf`, `ldexp(NaN, n) = NaN`. Bit-exact. */
@@ -456,8 +455,9 @@ double sf64_nextafter(double x, double y);
  *  spurious overflow/underflow (C99 `hypot`).
  *  @param a first operand
  *  @param b second operand
- *  @return `sqrt(a² + b²)` correctly rounded to the extent of the underlying
- *  `sqrt` (≤1 ULP). **`±inf` beats NaN**: if either operand is infinite, the
+ *  @return An approximation to `sqrt(a² + b²)`. The MPFR `hypot` sweep
+ *  enforces U10 (≤4 ULP) on its documented domain. **`±inf` beats NaN**:
+ *  if either operand is infinite, the
  *  result is `+inf` even if the other is NaN (C99 F.10.4.3). Otherwise any
  *  NaN input → canonical quiet NaN. `hypot(±0, ±0) = +0`. Returns `±inf` only
  *  on true mathematical overflow, never from intermediate `a²`. */
@@ -474,9 +474,11 @@ double sf64_hypot(double a, double b);
  * to the corresponding `sf64_*` primitive. Polynomial constants are static
  * `constexpr` tables (no runtime-computed coefficients).
  *
- * @note ULP bounds cited per function are measured worst-case against a
- * 200-bit MPFR oracle in `tests/test_transcendental_1ulp.cpp` plus
- * `tests/mpfr/test_mpfr_diff.cpp`.
+ * @note The per-function bounds below are test budgets for named sweeps in
+ * `tests/mpfr/test_mpfr_diff.cpp`, using MPFR at 200-bit precision. Signed
+ * logarithmic sweeps cover both signs of the stated magnitude range. These
+ * sampled checks do not prove a bound for every possible input.
+ * `tests/test_transcendental_libm.cpp` provides supplemental host-libm checks.
  * @{
  */
 
@@ -486,19 +488,19 @@ double sf64_hypot(double a, double b);
  */
 
 /** @brief Sine. @param x radians @return `sin(x)`.
- *  @details Measured worst-case **≤4 ULP** vs. host libm on `[1e-6, 100]`.
+ *  @details MPFR sweep budget **≤4 ULP** vs. MPFR on `[1e-6, 100]`.
  *  Cody-Waite argument reduction for `|x| < 1e14`; Payne-Hanek (via SLEEF's
  *  `rempitabdp`) for `|x| ≥ 1e14`. `sin(±0) = ±0`. `sin(±inf) = NaN`.
- *  NaN → NaN. No IEEE exception flags. */
+ *  NaN → NaN. */
 double sf64_sin(double x);
 
 /** @brief Cosine. @param x radians @return `cos(x)`.
- *  @details Measured worst-case **≤4 ULP** vs. host libm on `[1e-6, 100]`.
+ *  @details MPFR sweep budget **≤4 ULP** vs. MPFR on `[1e-6, 100]`.
  *  `cos(±0) = 1`. `cos(±inf) = NaN`. NaN → NaN. */
 double sf64_cos(double x);
 
 /** @brief Tangent. @param x radians @return `tan(x)`.
- *  @details Measured worst-case **≤8 ULP** vs. host libm on `[1e-6, 1.5]`.
+ *  @details MPFR sweep budget **≤8 ULP** vs. MPFR on `[1e-6, 1.5]`.
  *  `tan(±0) = ±0`. `tan(±inf) = NaN`. NaN → NaN. At odd multiples of π/2
  *  the mathematical value is unbounded; result approaches `±inf` as precision
  *  allows (no trap). */
@@ -511,62 +513,63 @@ double sf64_tan(double x);
 void sf64_sincos(double x, double* s, double* c);
 
 /** @brief Inverse sine. @param x @return `asin(x)` in radians, in `[-π/2, π/2]`.
- *  @details Measured worst-case **≤4 ULP** vs. host libm on `[1e-6, 0.99]`.
+ *  @details MPFR sweep budget **≤4 ULP** vs. MPFR on `[1e-6, 0.99]`.
  *  Domain: `|x| ≤ 1`. `asin(x) = NaN` for `|x| > 1`. `asin(±0) = ±0`. NaN → NaN. */
 double sf64_asin(double x);
 
 /** @brief Inverse cosine. @param x @return `acos(x)` in radians, in `[0, π]`.
- *  @details Measured worst-case **≤4 ULP** vs. host libm on `[1e-6, 0.99]`.
+ *  @details MPFR sweep budget **≤4 ULP** vs. MPFR on `[1e-6, 0.99]`.
  *  Domain: `|x| ≤ 1`. `acos(x) = NaN` for `|x| > 1`. `acos(1) = +0`. NaN → NaN. */
 double sf64_acos(double x);
 
 /** @brief Inverse tangent. @param x @return `atan(x)` in radians, in `(-π/2, π/2)`.
- *  @details Measured worst-case **≤4 ULP** vs. host libm on `[1e-6, 1e6]`.
+ *  @details MPFR sweep budget **≤4 ULP** vs. MPFR on `[1e-6, 1e6]`.
  *  `atan(±0) = ±0`. `atan(±inf) = ±π/2`. NaN → NaN. */
 double sf64_atan(double x);
 
 /** @brief Two-argument inverse tangent (quadrant-correct).
  *  @param y ordinate @param x abscissa @return `atan2(y, x)` in radians, in `[-π, π]`.
- *  @details Measured worst-case **≤4 ULP** (u10 tier) vs. host libm.
+ *  @details MPFR sweep budget **≤4 ULP** on a ring with radius in `[1e-20, 1e20]`
+ *  and angle in `[-π, π]`.
  *  Full IEEE special-case table implemented: `atan2(±0, +0) = ±0`,
  *  `atan2(±0, -0) = ±π`, `atan2(±y, ±inf)`, `atan2(±inf, ±inf)` = quadrant
  *  multiples of π/4 with correct sign. NaN in either argument → NaN. */
 double sf64_atan2(double y, double x);
 
 /** @brief π-scaled sine: `sin(π·x)`. @param x @return `sin(π x)`.
- *  @details Measured worst-case **≤4 ULP**. `sinpi(0) = +0`, `sinpi(integer) = ±0`.
+ *  @details MPFR sweep budget **≤4 ULP** on `[-4, 4]`. `sinpi(0) = +0`, `sinpi(integer) = ±0`.
  *  `sinpi(±inf) = NaN`. NaN → NaN. */
 double sf64_sinpi(double x);
 
 /** @brief π-scaled cosine: `cos(π·x)`. @param x @return `cos(π x)`.
- *  @details Measured worst-case **≤4 ULP**. `cospi(integer) = ±1`.
+ *  @details MPFR sweep budget **≤4 ULP** on `[-4, 4]`. `cospi(integer) = ±1`.
  *  `cospi(±inf) = NaN`. NaN → NaN. */
 double sf64_cospi(double x);
 
 /** @brief π-scaled tangent: `tan(π·x)`. @param x @return `tan(π x)`.
- *  @details Measured worst-case **≤8 ULP** (u35 tier). Singularities at
+ *  @details MPFR sweep budget **≤8 ULP** on `[-0.49, 0.49]`. Singularities at
  *  half-integer `x` approach `±inf`. `tanpi(±inf) = NaN`. NaN → NaN. */
 double sf64_tanpi(double x);
 
 /** @brief `asin(x) / π`. @param x @return `asin(x)/π` in `[-0.5, 0.5]`.
- *  @details Measured worst-case **≤8 ULP** (u35 tier) vs. `asin(x)/π` from
- *  host libm on `[1e-6, 0.99]`. Domain `|x| ≤ 1`; outside → NaN. NaN → NaN. */
+ *  @details MPFR sweep budget **≤4 ULP** on `[-0.99, 0.99]`.
+ *  Domain `|x| ≤ 1`; outside → NaN. NaN → NaN. */
 double sf64_asinpi(double x);
 
 /** @brief `acos(x) / π`. @param x @return `acos(x)/π` in `[0, 1]`.
- *  @details Measured worst-case **≤8 ULP** (u35 tier). Domain `|x| ≤ 1`;
+ *  @details MPFR sweep budget **≤4 ULP** on `[-0.99, 0.99]`. Domain `|x| ≤ 1`;
  *  outside → NaN. NaN → NaN. */
 double sf64_acospi(double x);
 
 /** @brief `atan(x) / π`. @param x @return `atan(x)/π` in `(-0.5, 0.5)`.
- *  @details Measured worst-case **≤8 ULP** (u35 tier). NaN → NaN. */
+ *  @details MPFR sweep budget **≤4 ULP** on `|x| ∈ [1e-6, 1e6]`. NaN → NaN. */
 double sf64_atanpi(double x);
 
 /** @brief `atan2(y, x) / π`.
  *  @param y numerator
  *  @param x denominator
  *  @return `atan2(y,x)/π` in `[-1, 1]`.
- *  @details Measured worst-case **≤8 ULP** (u35 tier). Same special-case
+ *  @details MPFR sweep budget **≤4 ULP** on the same ring sweep as atan2. Same special-case
  *  table as @ref sf64_atan2, scaled by `1/π`. NaN → NaN. */
 double sf64_atan2pi(double y, double x);
 
@@ -578,34 +581,34 @@ double sf64_atan2pi(double y, double x);
  */
 
 /** @brief Hyperbolic sine. @param x @return `sinh(x)`.
- *  @details Worst-case **≤8 ULP** (u35 tier) on `|x| ∈ [1e-4, 20]`
+ *  @details MPFR sweep budget **≤8 ULP** (u35 tier) on `|x| ∈ [1e-4, 20]`
  *  (symmetric sweep vs MPFR). `sinh(±0) = ±0`, `sinh(±inf) = ±inf`.
  *  Overflow → `±inf`. NaN → NaN. */
 double sf64_sinh(double x);
 
 /** @brief Hyperbolic cosine. @param x @return `cosh(x)`.
- *  @details Measured worst-case **≤4 ULP** (u10 tier) on `[1e-4, 20]`.
+ *  @details MPFR sweep budget **≤4 ULP** (u10 tier) on `[1e-4, 20]`.
  *  `cosh(±0) = 1`, `cosh(±inf) = +inf`. Overflow → `+inf`. NaN → NaN. */
 double sf64_cosh(double x);
 
 /** @brief Hyperbolic tangent. @param x @return `tanh(x)` in `(-1, 1)`.
- *  @details Measured worst-case **≤8 ULP** (u35 tier) on `[1e-4, 20]`.
+ *  @details MPFR sweep budget **≤8 ULP** (u35 tier) on `[1e-4, 20]`.
  *  `tanh(±0) = ±0`, `tanh(±inf) = ±1`. NaN → NaN. */
 double sf64_tanh(double x);
 
 /** @brief Inverse hyperbolic sine. @param x @return `asinh(x)`.
- *  @details Measured worst-case **≤8 ULP** (u35 tier) on `[1e-4, 1e6]`.
+ *  @details MPFR sweep budget **≤8 ULP** (u35 tier) on `[1e-4, 1e6]`.
  *  `asinh(±0) = ±0`, `asinh(±inf) = ±inf`. NaN → NaN. No domain restriction. */
 double sf64_asinh(double x);
 
 /** @brief Inverse hyperbolic cosine. @param x @return `acosh(x)` in `[0, ∞)`.
- *  @details Measured worst-case **≤4 ULP** (u10 tier) on `[1.01, 1e6]`.
+ *  @details MPFR sweep budget **≤4 ULP** (u10 tier) on `[1.01, 1e6]`.
  *  Domain: `x ≥ 1`. `acosh(x) = NaN` for `x < 1`. `acosh(1) = +0`.
  *  `acosh(+inf) = +inf`. NaN → NaN. */
 double sf64_acosh(double x);
 
 /** @brief Inverse hyperbolic tangent. @param x @return `atanh(x)`.
- *  @details Measured worst-case **≤4 ULP** (u10 tier) on `[1e-4, 0.99]`.
+ *  @details MPFR sweep budget **≤4 ULP** (u10 tier) on `[1e-4, 0.99]`.
  *  Domain: `|x| ≤ 1`. `atanh(±1) = ±inf`. `atanh(x) = NaN` for `|x| > 1`.
  *  `atanh(±0) = ±0`. NaN → NaN. */
 double sf64_atanh(double x);
@@ -618,43 +621,43 @@ double sf64_atanh(double x);
  */
 
 /** @brief Natural exponential `e^x`. @param x @return `exp(x)`.
- *  @details Measured worst-case **≤4 ULP** (u10 tier) on `[1e-6, 700]`.
+ *  @details MPFR sweep budget **≤4 ULP** (u10 tier) on `[1e-6, 700]`.
  *  `exp(±0) = 1`, `exp(+inf) = +inf`, `exp(-inf) = +0`. Overflow (`x` large)
  *  → `+inf`. Underflow → subnormal or `+0`. NaN → NaN. */
 double sf64_exp(double x);
 
 /** @brief Base-2 exponential `2^x`. @param x @return `exp2(x)`.
- *  @details Measured worst-case **≤4 ULP** (u10 tier) on `[1e-6, 1000]`.
+ *  @details MPFR sweep budget **≤4 ULP** (u10 tier) on `[1e-6, 1000]`.
  *  Same boundary behavior as @ref sf64_exp. */
 double sf64_exp2(double x);
 
 /** @brief Base-10 exponential `10^x`. @param x @return `exp10(x)`.
- *  @details Measured worst-case **≤4 ULP** (u10 tier) on the same sweep band.
+ *  @details MPFR sweep budget **≤4 ULP** on `|x| ∈ [1e-6, 300]`.
  *  Same boundary behavior as @ref sf64_exp. */
 double sf64_exp10(double x);
 
 /** @brief `e^x - 1`, accurate near zero (C99 `expm1`). @param x @return `exp(x) - 1`.
- *  @details Measured worst-case **≤4 ULP** (u10 tier) on `[1e-3, 700]`.
+ *  @details MPFR sweep budget **≤4 ULP** (u10 tier) on `[1e-3, 700]`.
  *  `expm1(±0) = ±0` (sign-preserving). `expm1(+inf) = +inf`.
  *  `expm1(-inf) = -1`. NaN → NaN. */
 double sf64_expm1(double x);
 
 /** @brief Natural logarithm. @param x @return `ln(x)`.
- *  @details Measured worst-case **≤4 ULP** (u10 tier) on `[1e-100, 1e100]`.
+ *  @details MPFR sweep budget **≤4 ULP** (u10 tier) on `[1e-100, 1e100]`.
  *  Domain: `x > 0`. `log(+0) = -inf`, `log(-0) = -inf`, `log(x) = NaN` for `x < 0`.
  *  `log(+inf) = +inf`. `log(1) = +0`. NaN → NaN. */
 double sf64_log(double x);
 
 /** @brief Base-2 logarithm. @param x @return `log2(x)`.
- *  @details Measured worst-case **≤4 ULP** (u10 tier). Same domain as @ref sf64_log. */
+ *  @details MPFR sweep budget **≤4 ULP** on `[1e-100, 1e100]`. Same domain as @ref sf64_log. */
 double sf64_log2(double x);
 
 /** @brief Base-10 logarithm. @param x @return `log10(x)`.
- *  @details Measured worst-case **≤4 ULP** (u10 tier). Same domain as @ref sf64_log. */
+ *  @details MPFR sweep budget **≤4 ULP** on `[1e-100, 1e100]`. Same domain as @ref sf64_log. */
 double sf64_log10(double x);
 
 /** @brief `ln(1 + x)`, accurate near zero (C99 `log1p`). @param x @return `log(1+x)`.
- *  @details Measured worst-case **≤4 ULP** (u10 tier) on `[1e-10, 1e10]`.
+ *  @details MPFR sweep budget **≤4 ULP** (u10 tier) on `[1e-10, 1e10]`.
  *  Domain: `x ≥ -1`. `log1p(-1) = -inf`, `log1p(x) = NaN` for `x < -1`.
  *  `log1p(±0) = ±0`. `log1p(+inf) = +inf`. NaN → NaN. */
 double sf64_log1p(double x);
@@ -668,17 +671,17 @@ double sf64_log1p(double x);
 
 /** @brief General power `x^y` (IEEE `pow`). @param x base @param y exponent
  *  @details Classified under the **u35 tier** (≤8 ULP) — gated uniformly
- *  at ≤8 ULP by `tests/mpfr/test_mpfr_diff.cpp` across three overlapping
+ *  at ≤8 ULP by `tests/mpfr/test_mpfr_diff.cpp` across three sampled
  *  bounded windows covering the validated domain:
  *    - `x ∈ [1e-6, 1e6],    |y| ≤ 50`     (moderate)
- *    - `x ∈ [1e-100, 1e100], |y| ≤ 5`     (x wide, y modest)
+ *    - `x ∈ [1e-100, 1e100], 1e-5 ≤ |y| ≤ 5` (both log-sampled)
  *    - `x ∈ [1e-6, 1e3],    |y| ≤ 100`    (x modest, y wide)
- *  The log tail uses the DD-Horner rewrite landed in v1.1; measured
- *  worst-case is inside U10 across the wider double range, while U35 remains
- *  the release gate.
+ *  These sampled windows do not establish an error bound over every
+ *  binary64 input. The log and product remain double-double values through
+ *  the internal exponential kernel.
  *  Full IEEE special-case table:
  *    - `pow(x, ±0) = 1` for any `x` (including NaN).
- *    - `pow(±1, y) = 1` (including `y = NaN`).
+ *    - `pow(+1, y) = 1` (including `y = NaN`).
  *    - `pow(x, y) = NaN` for `x < 0` and non-integer finite `y`.
  *    - `pow(±0, y<0)` = `±inf` (odd integer `y`) or `+inf` (else).
  *    - `pow(±0, y>0)` = `±0` (odd integer `y`) or `+0` (else).
@@ -712,7 +715,7 @@ double sf64_powr(double x, double y);
  *  @param x base
  *  @param n integer exponent
  *  @return `x^n`.
- *  @details Measured worst-case **≤8 ULP** (piggybacks on @ref sf64_pow internally).
+ *  @details MPFR sweep budget **≤8 ULP** on `x ∈ [-4, 4]`, integer `n ∈ [-10, 10]`.
  *  `pown(x, 0) = 1` for any finite `x` (including `±0`). `pown(±inf, n)` per IEEE.
  *  Since `n` is integer, the sign of `0^n` for negative `n` is unambiguous
  *  (`pown(-0, -1) = -inf`). */
@@ -720,13 +723,13 @@ double sf64_pown(double x, int n);
 
 /** @brief Integer `n`-th root (IEEE `rootn`). @param x base @param n integer root
  *  @return `x^(1/n)`.
- *  @details Measured worst-case **≤4 ULP** (u10 tier) on `[0.01, 1e10]` with
+ *  @details MPFR sweep budget **≤8 ULP** (u35 tier) on `[0.01, 1e10]` with
  *  `n ∈ {2,3,4,5,7,11}`. `rootn(x, 0) = NaN`. `rootn(x<0, n)` = real-valued
  *  result for odd `n`, NaN for even `n`. `rootn(±0, n)` per IEEE. */
 double sf64_rootn(double x, int n);
 
 /** @brief Real cube root. @param x @return `cbrt(x)` (sign-preserving).
- *  @details Measured worst-case **≤4 ULP** (u10 tier) on `[1e-300, 1e300]`,
+ *  @details MPFR sweep budget **≤4 ULP** on `|x| ∈ [denorm_min, 1e300]`,
  *  including subnormals. `cbrt(-27) = -3`. `cbrt(±0) = ±0`.
  *  `cbrt(±inf) = ±inf`. NaN → NaN. Never returns NaN for non-NaN real input. */
 double sf64_cbrt(double x);
@@ -759,13 +762,10 @@ double sf64_erfc(double x);
 double sf64_tgamma(double x);
 
 /** @brief Natural log of `|Γ(x)|`. @param x @return `log(|gamma(x)|)`.
- *  @details Worst-case **≤1024 ULP** vs 200-bit MPFR over the full
- *  positive shippable range `(0.5, 1e4]`:
- *  * `(0.5, 3]` — zero-centered DD Taylor pivots at `x = 1` (window
- *    `|x-1| ≤ 0.25`) and `x = 2` (window `|x-2| ≤ 0.5`), 22-term series
- *    in DD Horner from DLMF §5.7.3; outside the windows the Lanczos
- *    body handles the regime.
- *  * `[3, 1e4]` — Lanczos g=7 in DD.
+ *  @details MPFR 200-bit sweeps enforce **≤1024 ULP** on `[0.5, 3]` and
+ *  **≤4 ULP** on `[3, 1e4]`. SLEEF's shared `gammak` kernel uses central
+ *  polynomials, recurrence shifting, and a Stirling-form tail. The result
+ *  is reconstructed as `clc + log(abs(div))` in double-double arithmetic.
  *  `lgamma(1) = +0`, `lgamma(2) = +0`.
  *  `lgamma(non-positive integer) = +inf`. `lgamma(±inf) = +inf`. NaN → NaN. */
 double sf64_lgamma(double x);
@@ -799,15 +799,17 @@ double sf64_remainder(double x, double y);
 
 /**
  * @name rounding Non-RNE rounding variants (`_r` surface)
- * @brief Explicit-mode versions of every round-affected op. Default `sf64_*`
- *        entry points are RNE; the `_r` suffix takes an @ref sf64_rounding_mode
- *        and covers all five IEEE-754 rounding attributes.
+ * @brief Explicit rounding-mode APIs for core arithmetic, narrowing, and rint.
+ *        The `_r` suffix takes an @ref sf64_rounding_mode and supports all
+ *        five IEEE-754 rounding attributes.
  *
  * Ops whose result does not depend on the rounding attribute —
  * @ref sf64_neg, @ref sf64_fabs, @ref sf64_copysign, the compare predicates,
- * @ref sf64_ldexp, @ref sf64_frexp, classification, and `fmod`/`remainder` —
+ * @ref sf64_frexp, classification, and `fmod`/`remainder` —
  * have no `_r` variant because their semantics are either exact or defined
- * independently of the rounding attribute.
+ * independently of the rounding attribute. @ref sf64_ldexp also lacks an
+ * `_r` variant, but uses RNE when scaling loses bits at the subnormal boundary
+ * and returns signed infinity on overflow.
  *
  * `floor`/`ceil`/`trunc`/`round` are likewise mode-fixed by definition and
  * have no `_r` form; @ref sf64_rint has @ref sf64_rint_r because `rint` is

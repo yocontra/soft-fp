@@ -23,19 +23,8 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        # ubuntu-22.04 is intentionally out: its libmpfr 4.1 lacks
-        # mpfr_powr / mpfr_sinpi / mpfr_cospi / mpfr_tanpi / mpfr_asinpi /
-        # mpfr_acospi / mpfr_atanpi / mpfr_atan2pi / mpfr_rootn_ui — all
-        # added in MPFR 4.2 (Ubuntu 24.04+). The test oracles use those
-        # entry points and there's no honest way to skip them while still
-        # claiming precision tiers on the functions they cover.
-        #
-        # macos-13 is out: GitHub has wound down the Intel macOS fleet and
-        # that runner queues for hours. soft_fp64 has no architecture-
-        # specific code (every op goes through integer bit manipulation),
-        # so x86_64 coverage from the Linux matrix is sufficient; macos-14
-        # (Apple Silicon) is what the bench baseline and release artifacts
-        # target.
+        # Ubuntu 24.04 supplies MPFR 4.2 APIs used by the precision oracles.
+        # Linux covers x86-64; macos-14 covers Apple Silicon.
         os: [macos-14, ubuntu-24.04]
         build_type: [Debug, Release]
         compiler: [default]
@@ -437,13 +426,11 @@ jobs:
           retention-days: 7
 
   # ---------------------------------------------------------------------------
-  # 5. Bench regression gate. PR-only, enforcing. macos-14 runner is dedicated
-  # Apple M-series — matches the committed bench/baseline.json. Threshold is
-  # 0.20 (20%) to absorb shared-runner jitter without letting real regressions
-  # land silently; Linux CI runners are too noisy for μs-scale timings so the
-  # gate is macos-only. If the shared runner drifts further, tighten the
-  # threshold or refresh the baseline in the same commit — do NOT revert to
-  # advisory.
+  # 5. Bench regression gate. PR-only, enforcing, macos-14.
+  # The baseline records its measurement hardware and compiler. CI retains
+  # the 20% gate and 5 ns cheap-op budget below for shared-runner variation.
+  # Investigate drift with repeated measurements; baseline updates require
+  # a reviewed hardware or intentional performance change (bench/README.md).
   # ---------------------------------------------------------------------------
   bench-regression:
     name: bench regression
@@ -499,14 +486,9 @@ jobs:
         run: bash scripts/test_install.sh
 
       - name: Verify ABI surface (only sf64_* symbols exported)
-        # Fails if the archive exports any non-`sf64_*` public symbol.
-        # `__clang_call_terminate` is a compiler-emitted intrinsic and is
-        # the only allowed exception. Hidden-visibility cores (added via
-        # -fvisibility=hidden on the library target) show in `nm -g` on
-        # static archives because all defined symbols are listed; the
-        # enforcement that actually matters is that they're `private external`
-        # in the object files (checked during a downstream shared-object
-        # build). The grep below holds the public archive surface honest.
+        # Check archive definitions, excluding compiler-generated symbols and
+        # prefixed internal helpers. test_install.sh verifies installed consumers;
+        # the separate test_abi_manifest ctest checks format-specific declarations.
         run: |
           cmake -S . -B build-abi -DCMAKE_BUILD_TYPE=Release
           cmake --build build-abi --target soft_fp64 --parallel

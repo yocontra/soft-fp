@@ -112,21 +112,18 @@ constexpr double kTAU_L = 1.2246467991473532072e-16 * 2.0;
 // ---- bit-level scale / sign helpers (pure bit reinterprets, no FPU) -----
 
 SF64_SLEEF_INLINE double mulsign_(double x, double y) noexcept {
-    // SAFETY: manipulate the sign bit via bit-cast only.
     const uint64_t xb = bits_of(x);
     const uint64_t yb = bits_of(y);
     return from_bits(xb ^ (yb & 0x8000000000000000ULL));
 }
 
 SF64_SLEEF_INLINE double orsign_(double x, double y) noexcept {
-    // SAFETY: manipulate the sign bit via bit-cast only.
     const uint64_t xb = bits_of(x);
     const uint64_t yb = bits_of(y);
     return from_bits(xb | (yb & 0x8000000000000000ULL));
 }
 
 SF64_SLEEF_INLINE int ilogb2k_(double d) noexcept {
-    // SAFETY: pure bit read of the IEEE-754 exponent field.
     return static_cast<int>((bits_of(d) >> 52) & 0x7FF) - 0x3FF;
 }
 

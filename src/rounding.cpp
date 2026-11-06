@@ -38,7 +38,6 @@ SF64_ALWAYS_INLINE bool is_exp_max(uint64_t b) noexcept {
 // trunc(x) expressed as bit manipulation only. Clears the fractional bits
 // of the mantissa below the implicit point.
 SF64_ALWAYS_INLINE double trunc_bits(double x) noexcept {
-    // SAFETY: __builtin_bit_cast: identical-size POD round-trip, no UB.
     const uint64_t b = bits_of(x);
     const uint32_t e = extract_exp(b);
 
@@ -64,8 +63,6 @@ SF64_ALWAYS_INLINE double trunc_bits(double x) noexcept {
     // Mask of the fractional bits below the integer point. For unbiased=e,
     // the integer point is at bit (52 - e) of the mantissa.
     const uint64_t frac_mask = kFracMask >> unbiased;
-    // SAFETY: __builtin_bit_cast round-trip via from_bits; bit layout
-    // guaranteed by IEEE-754 binary64.
     return from_bits(b & ~frac_mask);
 }
 
@@ -95,7 +92,6 @@ SF64_ALWAYS_INLINE double next_integer_away(double x_trunc, uint32_t direction_s
     // construct `trunc(x) ± 1.0` via a bit-level increment of the mantissa
     // at the LSB of the integer part, carrying into the exponent on wrap.
 
-    // SAFETY: __builtin_bit_cast round-trip via from_bits; POD-sized cast.
     uint64_t b = bits_of(x_trunc);
     const uint32_t sign = extract_sign(b);
 
@@ -135,8 +131,6 @@ SF64_ALWAYS_INLINE double next_integer_away(double x_trunc, uint32_t direction_s
         // exponent decrements).
         b = b - one_ulp;
     }
-    // SAFETY: from_bits = bit_cast to double; always valid for any 64-bit
-    // pattern (IEEE-754 doesn't have trap representations).
     return from_bits(b);
 }
 
@@ -153,7 +147,6 @@ extern "C" double sf64_trunc(double x) {
 // floor = towards -inf
 // -----------------------------------------------------------------------------
 extern "C" double sf64_floor(double x) {
-    // SAFETY: bit_cast for field inspection — no UB on any input bit pattern.
     const uint64_t b = bits_of(x);
     if (is_exp_max(b))
         return x; // NaN/inf unchanged.
@@ -299,7 +292,6 @@ extern "C" double sf64_rint(double x) {
     // implicit bit. For any nonzero x with unbiased==0, implicit bit is 1,
     // so trunc is ±1 which is odd; halfway case is ±1.5 → ±2. Correct.
     const int int_lsb_pos = kFracBits - unbiased;
-    // SAFETY: bit_cast inspection of trunc-result bits.
     const uint64_t tb = bits_of(t);
     uint64_t int_lsb_val;
     if (int_lsb_pos == kFracBits) {
@@ -341,7 +333,6 @@ extern "C" double sf64_fract(double x) {
 
     // NaN → NaN (quieted); inf → canonical NaN per GLSL fract(±inf)=NaN.
     if (is_nan_bits(b)) {
-        // SAFETY: bit OR of quiet-bit on known NaN; result is still NaN.
         return from_bits(b | kQuietNaNBit);
     }
     if (is_inf_bits(b)) {
@@ -350,7 +341,6 @@ extern "C" double sf64_fract(double x) {
 
     const double f = sf64_floor(x);
     // If x is already integral (incl. ±0, ±1, huge magnitudes), result is +0.
-    // SAFETY: bit_cast for comparison of two fp64 bit patterns.
     if (bits_of(f) == b) {
         return from_bits(0ULL); // +0.0
     }
@@ -360,7 +350,6 @@ extern "C" double sf64_fract(double x) {
     const double r = sf64_sub(x, f);
     // Guarantee non-negative zero exit (sub could produce -0 in theory; fract
     // is defined in [0, 1)).
-    // SAFETY: bit_cast comparison to zero, preserves value for nonzero.
     if ((bits_of(r) & ~kSignMask) == 0) {
         return from_bits(0ULL);
     }
@@ -375,7 +364,6 @@ extern "C" double sf64_modf(double x, double* iptr) {
 
     // NaN: store NaN in iptr, return NaN.
     if (is_nan_bits(b)) {
-        // SAFETY: bit OR of quiet-bit on NaN; result is NaN.
         const double nan_q = from_bits(b | kQuietNaNBit);
         if (iptr)
             *iptr = nan_q;
@@ -386,7 +374,6 @@ extern "C" double sf64_modf(double x, double* iptr) {
     if (is_inf_bits(b)) {
         if (iptr)
             *iptr = x;
-        // SAFETY: mask out everything but sign; produces ±0.
         return from_bits(b & kSignMask);
     }
 
@@ -397,7 +384,6 @@ extern "C" double sf64_modf(double x, double* iptr) {
     const double frac = sf64_sub(x, i);
     // C spec: modf preserves the sign of x in the fractional part, including
     // for zero fractional. If sub produced +0 and x is negative, flip sign.
-    // SAFETY: bit_cast to check for zero and re-stamp sign bit.
     const uint64_t fb = bits_of(frac);
     if ((fb & ~kSignMask) == 0) {
         return from_bits((fb & ~kSignMask) | (b & kSignMask));
@@ -413,7 +399,6 @@ extern "C" double sf64_ldexp(double x, int n) {
 
     // NaN → NaN (quieted).
     if (is_nan_bits(b)) {
-        // SAFETY: quiet-bit OR onto NaN.
         return from_bits(b | kQuietNaNBit);
     }
     // ±inf or ±0 are fixed points.
@@ -521,7 +506,6 @@ extern "C" double sf64_frexp(double x, int* exp) {
     if (is_nan_bits(b)) {
         if (exp)
             *exp = 0;
-        // SAFETY: quiet-bit OR on NaN.
         return from_bits(b | kQuietNaNBit);
     }
     if (is_inf_bits(b)) {
@@ -590,7 +574,6 @@ extern "C" double sf64_logb(double x) {
     const uint64_t b = bits_of(x);
 
     if (is_nan_bits(b)) {
-        // SAFETY: NaN → quieted NaN.
         return from_bits(b | kQuietNaNBit);
     }
     if (is_zero_bits(b)) {
@@ -603,8 +586,7 @@ extern "C" double sf64_logb(double x) {
     }
 
     const int ilog = sf64_ilogb(x);
-    // Convert int to fp64 via the ABI conversion routine. This keeps logb
-    // honest about not using host FPU arithmetic.
+    // Convert the exponent through the integer-only ABI conversion routine.
     // Forward-declared locally to avoid adding a soft_f64.h dependency here.
     extern double sf64_from_i32(int32_t);
     return sf64_from_i32(ilog);

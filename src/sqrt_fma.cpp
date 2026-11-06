@@ -2,8 +2,7 @@
 //
 // Reference: Mesa `src/compiler/glsl/float64.glsl` — __fsqrt64, __ffma64.
 //
-// Implementation choices (deviating from the Newton-Raphson sketch in the
-// spec in favour of bit-exactness by construction):
+// Algorithms:
 //
 // * sqrt — integer digit-by-digit square-root extraction on the 53-bit
 //   mantissa. 53 compare-subtract-shift iterations produce a 53-bit result
@@ -16,9 +15,7 @@
 //   bits. Again no host-FPU arithmetic and no runtime dependency on the
 //   arithmetic TU.
 //
-// * rsqrt — 1/sqrt(x) via sf64_div. This composes a correctly-rounded div
-//   with a bit-exact sqrt; the 1-ULP test tolerance covers the single
-//   rounding step.
+// * rsqrt — sf64_div(1, sf64_sqrt(x)); each operation rounds separately.
 //
 // Constraint: no `+`, `-`, `*`, `/` on a host `double` lvalue anywhere in
 // these bodies. Integer math only.
@@ -118,9 +115,6 @@ namespace {
 
 SF64_ALWAYS_INLINE double sqrt_r_impl(double x, sf64_rounding_mode mode,
                                       sf64_internal_fe_acc& fe) noexcept {
-    // SAFETY: __builtin_bit_cast punning double <-> uint64 is the documented
-    // IEEE-754 field-access technique; no UB because both types have the
-    // same size and no trap representations.
     const uint64_t bx = bits_of(x);
     const uint32_t sign = extract_sign(bx);
     const uint32_t exp_biased = extract_exp(bx);
@@ -131,8 +125,6 @@ SF64_ALWAYS_INLINE double sqrt_r_impl(double x, sf64_rounding_mode mode,
         // Inf or NaN.
         if (frac != 0) {
             // NaN -> quieted NaN (propagate payload, set quiet bit).
-            // SAFETY: bitwise OR on uint64, bit-cast back to double — no FPU.
-            // IEEE 754 §7.2: sqrt(sNaN) raises INVALID.
             if (is_snan_bits(bx)) {
                 fe.raise(SF64_FE_INVALID);
             }
@@ -341,12 +333,8 @@ extern "C" double sf64_sqrt_r(sf64_rounding_mode mode, double x) {
 // ---- rsqrt ---------------------------------------------------------------
 
 extern "C" double sf64_rsqrt(double x) {
-    // rsqrt(x) = 1 / sqrt(x). Composition of bit-exact sqrt and correctly-
-    // rounded div yields <= 1 ULP error vs host 1/sqrt(x), which is the
-    // tolerance mandated by the spec.
+    // Two separately rounded operations implement the reciprocal square root.
     const double sq = sf64_sqrt(x);
-    // SAFETY: `bits_of` bit-cast of the literal 1.0 just yields the IEEE
-    // encoding of one (0x3FF0000000000000). No host-FPU arithmetic here.
     const double one = from_bits(0x3FF0000000000000ULL);
     return sf64_div(one, sq);
 }
@@ -395,27 +383,11 @@ SF64_ALWAYS_INLINE double round_and_pack(uint32_t sign, U128 mag, int64_t frame_
         }
     }
 
-    // Determine the target LSB position within `mag` for the rounded result.
-    // For a normal (biased >= 1), the mantissa is 53 bits with MSB at
-    // position msb in `mag`; LSB is at position msb - 52. We round at
-    // position (msb - 53): that's the round bit; sticky is everything below.
-    //
-    // For subnormal (biased <= 0): the true LSB lives at a higher position
-    // inside `mag`. The value is `mag * 2^frame_exp`; we want to encode as
-    // frac * 2^(-1074), so frac = mag * 2^(frame_exp + 1074). LSB of frac
-    // sits at bit position -(frame_exp + 1074) in `mag`... but only when
-    // that position is >= 0. If it's negative, the value is smaller than a
-    // subnormal LSB and rounds to zero (with sign).
-    //
-    // Easier formulation: define `target_lsb_pos` = bit position in `mag`
-    // of the result's LSB. Round at target_lsb_pos - 1 (round bit),
-    // sticky = all bits below round bit.
-    //
-    // For normal (biased >= 1):      target_lsb_pos = msb - 52
-    // For subnormal (biased <= 0):  we want the output to represent a value
-    //   with LSB at true exponent -1074. The LSB of `mag` is at true
-    //   exponent frame_exp. So position of output LSB in `mag` is
-    //   (-1074 - frame_exp).
+    // Value = mag * 2^frame_exp. A normal result keeps 53 bits, so its
+    // retained LSB is at msb - 52. A subnormal result has quantum 2^-1074,
+    // placing its retained LSB at -1074 - frame_exp in mag. Bits below that
+    // position supply the round and sticky bits. A nonpositive position
+    // means no low bits need to be discarded.
 
     int target_lsb;
     bool output_subnormal;
@@ -632,18 +604,11 @@ SF64_ALWAYS_INLINE double fma_r_impl(double a, double b, double c, sf64_rounding
     // Product: ma (53 bits, MSB at 52) * mb (53 bits, MSB at 52) = up to
     // 106-bit result with MSB at bit 104 or 105.
     //
-    // Routed through the `mul64x64_to_128` primitive in internal.h so the
-    // portable schoolbook multiplication; no compiler-native 128-bit
-    // integer extension is required.
+    // mul64x64_to_128 uses portable schoolbook multiplication.
     const U128Pair prod_pair = mul64x64_to_128(ma, mb);
     const U128 prod{prod_pair.hi, prod_pair.lo};
-    // `prod` has MSB at bit 104 or 105 depending on whether (ma*mb)'s high
-    // bit carried. Compute its true exponent.
-    // Exponent of the integer product: expa + expb - 104 (if MSB at 104)
-    //                                  expa + expb - 105 (if MSB at 105)
-    // It's easier to track: treat `prod` as an integer magnitude, and the
-    // product's unbiased exponent is (expa - 52) + (expb - 52) = expa+expb-104
-    // in "integer" form (i.e. product_value = prod * 2^(expa+expb-104)).
+    // Each input is its integer significand times 2^(exp - 52), hence
+    // product_value = prod * 2^(expa + expb - 104), regardless of its MSB.
     int64_t prod_exp = expa + expb - 104; // value = prod * 2^prod_exp
 
     // Handle c.
@@ -748,18 +713,9 @@ SF64_ALWAYS_INLINE double fma_r_impl(double a, double b, double c, sf64_rounding
         }
     }
 
-    // After the add/sub, the sticky bit (bit 0 of each operand that was
-    // preserved via jamming) has been added/subtracted. For subtract-with-
-    // borrow we must re-jam: if the two sticky contributions differed, the
-    // lower bits were not actually zero. However: our jamming ORed the
-    // sticky into bit 0 of each operand, and the rest of the dropped bits
-    // were represented as this single bit. This is the standard "shift-
-    // right-jamming" convention — add/sub of two jammed operands still
-    // gives a correctly-jammed result (sticky propagates through addition,
-    // and for subtraction the convention is conservative: we may mark a
-    // cancellation as inexact when it wasn't exactly zero at the dropped
-    // positions, which can only move a borderline round-to-even away from
-    // 0 to the correct direction).
+    // Alignment above folds discarded bits into bit 0 before combining the
+    // operands. Pass the resulting magnitude and common exponent to the
+    // rounding helper; no additional alignment is performed here.
 
     // Single rounding step covering normal, subnormal, and overflow.
     return round_and_pack(result_sign, mag, E, mode, fe);

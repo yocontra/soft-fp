@@ -31,7 +31,7 @@
 #endif
 
 // SF64_SLEEF_INLINE: separate inline marker for SLEEF's transcendental
-// scaffolding (DD polynomial arithmetic helpers `ddmul_*`, `ddadd_*`,
+// helpers (DD polynomial arithmetic helpers `ddmul_*`, `ddadd_*`,
 // `ddsqu_*` and the polynomial / argument-reduction helpers `sinpik_dd`,
 // `expk_dd`, `logk_dd`, `atan2k_u1_dd`, …). Defaults to `SF64_ALWAYS_INLINE`
 // — the inlining is correctness-critical when fenv tracking is on (the

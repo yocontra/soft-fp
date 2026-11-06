@@ -1,4 +1,4 @@
-# soft-fp64 fuzz targets
+# soft-fp fuzz targets
 
 libFuzzer targets for arithmetic, sqrt/fma, transcendentals, fcmp, remainder,
 and narrow-int conversions, plus an exhaustive `f32 <-> f64` round-trip test.
@@ -12,12 +12,15 @@ and narrow-int conversions, plus an exhaustive `f32 <-> f64` round-trip test.
 | `fuzz_transcendental.cpp` | libFuzzer | sin/cos/tan/exp/log/pow: special-case handling, coarse libm agreement. |
 | `fuzz_fcmp.cpp` | libFuzzer | `sf64_fcmp(a, b, pred)` across all 16 predicates + NaN pairs. |
 | `fuzz_remainder.cpp` | libFuzzer + MPFR | Bit-exact `sf64_remainder(x, y)` agreement across the full binary64 domain. |
+| `fuzz_rounding_modes.cpp` | libFuzzer + MPFR | Arithmetic and integer conversions in every rounding mode. |
+| `fuzz_fp128.cpp` | libFuzzer | Binary128 arithmetic identities and special values; requires the binary128 library. |
+| `fuzz_fp256.cpp` | libFuzzer | Binary256 arithmetic identities and special values; requires the binary256 library. |
 | `fuzz_narrow_int.cpp` | libFuzzer | i8/i16/u8/u16 ↔ f64 conversions, saturation/rounding edges. |
 | `exhaustive_f32_f64_roundtrip.cpp` | plain ctest | Every 32-bit f32 pattern through `sf64_from_f32` → `sf64_to_f32`. |
 
 These targets are crash-hunts, not accuracy graders. ULP regressions
 are covered by `tests/test_arithmetic_exact.cpp`,
-`tests/test_sqrt_fma_exact.cpp`, `tests/test_transcendental_1ulp.cpp`,
+`tests/test_sqrt_fma_exact.cpp`, `tests/test_transcendental_libm.cpp`,
 and the MPFR differential harness. libFuzzer surfaces traps, sanitizer
 findings, and qualitative divergences (NaN↔finite, sign-of-inf, wildly
 different output) under coverage-guided input mutation.
@@ -32,20 +35,19 @@ cmake --build build -j
 ctest --test-dir build
 ```
 
-Fuzz targets are gated behind `-DSOFT_FP64_BUILD_FUZZ=ON`, so this path is
-unaffected. The exhaustive round-trip test is **also** gated — the
-`add_subdirectory(fuzz)` call only fires when the option is ON. If you want
-the exhaustive test to run in a default build, re-run cmake with the option
-enabled:
+### Exhaustive round-trip (no libFuzzer dependency)
+
+The exhaustive test has its own option and is built at the top level:
 
 ```bash
-cmake -B build -DSOFT_FP64_BUILD_FUZZ=ON
-cmake --build build --target exhaustive_f32_f64_roundtrip
-ctest --test-dir build -R test_exhaustive_f32 --output-on-failure
+cmake -S . -B build-exhaustive -DCMAKE_BUILD_TYPE=Release \
+    -DSOFT_FP64_BUILD_EXHAUSTIVE=ON
+cmake --build build-exhaustive --target exhaustive_f32_f64_roundtrip
+ctest --test-dir build-exhaustive -R test_exhaustive_f32_roundtrip --output-on-failure
 ```
 
-Expected runtime on an M-series Mac: 5–15 minutes (uses up to 16 threads
-via `std::thread::hardware_concurrency()`). The ctest timeout is 900s.
+It visits all 2³² binary32 encodings using up to 16 worker threads. Its ctest
+timeout is 900 seconds; elapsed time depends on the machine and build.
 
 ### libFuzzer build (requires clang)
 
@@ -61,14 +63,11 @@ cmake -B build-fuzz \
 cmake --build build-fuzz -j
 ```
 
-This produces:
-
-* `build-fuzz/fuzz/fuzz_arithmetic`
-* `build-fuzz/fuzz/fuzz_sqrt_fma`
-* `build-fuzz/fuzz/fuzz_transcendental`
-* `build-fuzz/fuzz/exhaustive_f32_f64_roundtrip` (also built; ASan+UBSan enabled
-  indirectly through inherited flags only if the user sets them — this target
-  itself uses only `-O2 -ffp-contract=off`).
+Executables are written under `build-fuzz/fuzz/` with the names in the table.
+The remainder and rounding-mode targets require MPFR and GMP; CMake reports
+when those dependencies are missing. Wider-format targets are built only when
+the corresponding library is enabled. BUILD_FUZZ does not enable the exhaustive
+test. Use a Clang distribution that includes libFuzzer and sanitizer runtimes.
 
 ### Running a smoke fuzz (30s)
 
@@ -114,5 +113,5 @@ the ARMv8 / x86-SSE hardware behavior. The round-trip test reports:
    smaller `minimized-from-<sha1>` reproducer.
 3. Add the minimized reproducer as a golden input to
    `tests/test_arithmetic_exact.cpp` (or the appropriate test) so regressions
-   get caught by the normal `just test` run.
+   get caught by the normal `ctest --test-dir build --output-on-failure` run.
 4. Fix the bug in `src/` and re-run the fuzzer to confirm.

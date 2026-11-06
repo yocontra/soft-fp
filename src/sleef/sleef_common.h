@@ -145,8 +145,6 @@ SF64_SLEEF_INLINE double pow2i(int q) noexcept {
 SF64_SLEEF_INLINE double upper(double d) noexcept {
     // Clear the low 27 mantissa bits so `upper(d) * upper(d)` fits in a
     // double without rounding — Dekker's classic trick.
-    // SAFETY: masking bits of a double and reinterpreting; the exponent
-    // field is untouched so the value stays in [d/2, 2d] magnitude range.
     const uint64_t mask = 0xFFFFFFFFF8000000ULL; // clear low 27 bits
     return from_bits(bits_of(d) & mask);
 }

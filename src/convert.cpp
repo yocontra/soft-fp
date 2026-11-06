@@ -328,11 +328,9 @@ SF64_ALWAYS_INLINE uint64_t fp64_to_unsigned(double x, uint64_t umax, sf64_round
 // raise through the caller's accumulator so explicit-mode (state-backed)
 // callers observe the flag, not just the TLS-backed default.
 SF64_ALWAYS_INLINE double from_f32_impl(float x, sf64_internal_fe_acc& fe) noexcept {
-    // SAFETY: read the fp32 operand's raw bit pattern without ever
-    // materializing a `float` lvalue — on Apple6+ (MSL §6.20) fp32 is
-    // flush-to-zero, so a rematerialized float would collapse subnormals
-    // before we get to inspect them. __builtin_bit_cast is a pure type pun
-    // (no arithmetic), so the integer payload survives.
+    // Inspect the encoding before arithmetic can flush a binary32 subnormal.
+    // bits_of copies the representation and blocks optimizer reconstruction
+    // of floating-point operations; see internal.h.
     const uint32_t b = bits_of(x);
 
     const uint32_t sign = (b >> 31) & 1u;

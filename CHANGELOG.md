@@ -4,12 +4,41 @@ All notable changes to `soft-fp` land here. Format loosely follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-Every numeric claim in this file traces to a specific CI-gated sweep.
-See `README.md` for the full precision table.
+Entries describe the corresponding release. Historical measurements are tied
+to their recorded configurations; the current accuracy gates are in `README.md`.
 
 ## [Unreleased]
 
 No unreleased changes.
+
+## [2.0.2] — 2026-11-05
+
+Validation and documentation fixes; the numerical algorithms and public ABI
+are unchanged.
+
+### Fixed
+
+- Kept runtime test expectations active in Release builds and replaced the
+  ineffective address-only linkage smoke with checks that exercise the API.
+- Made benchmark comparisons reject incomplete or malformed measurements by
+  default; filtered local comparisons require explicit partial-run opt-in.
+- Bound README power-accuracy claims to named executable sweeps, including
+  sampling, bounds, oracle, tier, and sample count.
+- Corrected build recipes, precision descriptions, FMA/power explanations,
+  and test names. Removed task narration and duplicated implementation comments.
+
+### Documentation corrections
+
+- Earlier version 1.1 notes claimed measured power accuracy across the full
+  double range. The checked-in bounded sweeps do not establish that claim;
+  current documentation states their exact domains instead.
+- Historical `hypot` wording mixed correct rounding with a one-ULP claim. The
+  documented MPFR gate is U10 (4 ULP) on the tested domain.
+- Previous descriptions of dedicated DLMF Taylor windows and a Lanczos
+  implementation for `lgamma` were inaccurate. The implementation uses the
+  SLEEF `gammak` polynomial/recurrence/Stirling kernel.
+- The version 1.1 performance discussion is now a dated note preserving its
+  measurements and correcting an inconsistent `to_i32` baseline comparison.
 
 ## [2.0.1] — 2026-08-11
 
@@ -397,7 +426,8 @@ and surfaces `soft_fp64_SOURCE_DIR` / `soft_fp64_SLEEF_SOURCE_DIR` /
   and the `include/soft_fp64/` header path is unchanged. Only the
   GitHub URL moves.
 
-[Unreleased]: https://github.com/yocontra/soft-fp/compare/v2.0.1...HEAD
+[Unreleased]: https://github.com/yocontra/soft-fp/compare/v2.0.2...HEAD
+[2.0.2]: https://github.com/yocontra/soft-fp/releases/tag/v2.0.2
 [2.0.1]: https://github.com/yocontra/soft-fp/releases/tag/v2.0.1
 [2.0.0]: https://github.com/yocontra/soft-fp/releases/tag/v2.0.0
 [1.3.0]: https://github.com/yocontra/soft-fp/releases/tag/v1.3.0
@@ -468,7 +498,7 @@ and silent (non-raising) exception behavior when `SOFT_FP64_FENV=disabled`.
   (`exp(|x|)` would overflow before the ×½), now it returns the
   correct finite ~±DBL_MAX result. Threshold is
   `log(2·DBL_MAX) ≈ 710.4758600739439`.
-- **Payne–Hanek deep-reduction breadth.** `test_transcendental_1ulp.cpp`
+- **Payne–Hanek deep-reduction breadth.** `test_transcendental_libm.cpp`
   `ks[]` extended from `{2⁴⁰, 2⁴⁵, 2⁵⁰}` to include `2⁵⁰⁰` and `2⁹⁰⁰`,
   matching the coverage already in `tests/test_coverage_mpfr.cpp`.
   Adds a libm-oracle signal for the deep-reduction regime.
@@ -493,11 +523,12 @@ and silent (non-raising) exception behavior when `SOFT_FP64_FENV=disabled`.
 ### Changed
 
 - **`sf64_pow` documented precision.** Doxygen on
-  `include/soft_fp64/soft_f64.h` reflects the post-A1 worst-case;
+  `include/soft_fp64/soft_f64.h` records the measured power error;
   shipped tier stays U35 (≤8 ULP) per the three bounded-window
   sweeps, with a note that measured worst-case is now inside U10
   (≤4 ULP) across the full double range thanks to the `logk_dd`
-  rewrite.
+  rewrite. **Correction in 2.0.2:** the bounded sweeps do not establish
+  full-range accuracy; that statement was unsupported.
 - **Experimental carve-out: `sf64_lgamma` on `[0.5, 3)`** remains
   report-only in `tests/experimental/experimental_precision.cpp`.
   The `logk_dd` fix did not close this — the blow-up is algorithmic
@@ -511,99 +542,12 @@ and silent (non-raising) exception behavior when `SOFT_FP64_FENV=disabled`.
 
 ### Performance
 
-- **SLEEF DD primitives inline RNE arithmetic.** `src/internal_arith.h`
-  (new) exposes hidden-visibility header-inlined RNE specializations
-  (`sf64_internal_{add,sub,mul,div,fma,sqrt}_rne`) with no `mode`
-  parameter. Every DD primitive in `src/sleef/sleef_common.h` and every
-  SLEEF public entry in `src/sleef/*.cpp` calls the inline RNE helpers
-  instead of the cross-TU `sf64_*` ABI entries. Each SLEEF public entry
-  declares a stack-local `sf64_internal_fe_acc` and flushes to the TLS
-  accumulator once on return, collapsing ~160 per-call TLS roundtrips in
-  `sf64_pow` down to one. Public `sf64_{add,sub,mul,div,fma,sqrt}`
-  become thin wrappers that dispatch to the RNE helper when `mode=RNE`
-  and keep the existing mode-parameterized body otherwise. No behavior
-  change on the `sf64_*_r(mode, …)` surface. Net 1.1-final bench profile
-  on Apple M2 Max local hardware (not the macos-14 GHA M1 fleet that CI
-  runs on — jitter between classes is within the 20% gate), release
-  build, `--min-time-ms=500`, vs the 1.0 `bench/baseline.json`. The
-  "1.1 tls" column is the committed refreshed `bench/baseline.json` for
-  this release; the "1.1 disabled" column is a parallel measurement for
-  consumers who build with `SOFT_FP64_FENV=disabled`:
-
-  | op       | 1.0    | 1.1 disabled | 1.1 tls (committed baseline) |
-  |----------|--------|--------------|------------------------------|
-  | `add`    | 10.89  | 11.50 (+6%)  | 12.45 (+14%)                 |
-  | `sub`    | 11.14  | 11.32 (+2%)  | 13.48 (+21%)                 |
-  | `mul`    | 5.19   | 5.56 (+7%)   | 6.47 (+25%)                  |
-  | `div`    | 16.87  | 18.25 (+8%)  | 18.69 (+11%)                 |
-  | `fma`    | 17.93  | 19.00 (+6%)  | 20.00 (+12%)                 |
-  | `to_i32` | 4.89   | 2.68 (−45%)  | 7.35 (+50%)                  |
-  | `pow`    | 1324.2 | 1685.7 (+27%)| 1722.1 (+30%)                |
-  | `log`    | 472.1  | 368.1 (−22%) | 380.2 (−19%)                 |
-  | `exp`    | 256.5  | 216.0 (−16%) | 221.9 (−13%)                 |
-  | `exp2`   | 274.6  | 211.7 (−23%) | 220.8 (−20%)                 |
-  | `cbrt`   | 1109.0 | 879.5 (−21%) | 898.0 (−19%)                 |
-  | `sin`    | 446.5  | 404.1 (−9%)  | 405.8 (−9%)                  |
-  | `cos`    | 524.7  | 447.6 (−15%) | 449.7 (−14%)                 |
-  | `tan`    | —      | −18% vs 1.0  | −17% vs 1.0                  |
-  | `sinh` / `cosh` / `tanh` | | −14 to −15% | −14 to −15%        |
-  | `asinh` / `acosh` / `atanh` | | −16 to −20% | −13 to −16%     |
-
-  Every transcendental that composes SLEEF DD primitives runs faster
-  than 1.0 because the DD primitives no longer pay per-call TLS /
-  mode-switch overhead. Residual regression on cheap arithmetic
-  (`add`/`sub`/`mul`/`div`/`fma`) under tls is the ~5 ns
-  `__tlv_get_addr` floor per raise site, handled by the cheap-op
-  carveout (below). Residual `sf64_pow` regression is from remaining
-  cross-TU calls to `sf64_fcmp` (×15), `sf64_trunc` (×3), `sf64_ldexp`,
-  `sf64_frexp`, `sf64_fabs`, `sf64_neg` inside `sf64_pow`'s body —
-  these are public-ABI entries from 1.0 and were outside the refactor
-  scope for 1.1. `TODO.md` tracks extending the internal RNE surface to
-  those helpers as a post-1.1 follow-up that would close the remaining
-  gap.
-- **`bench/baseline.json` refreshed for 1.1.** The committed baseline
-  is regenerated from a 1.1 `SOFT_FP64_FENV=tls` Release build on Apple
-  Silicon at `--min-time-ms=500`, matching CI's `bench-regression`
-  configuration. This is a reviewed deliberate perf change per the
-  project's baseline-refresh policy: 1.1 ships structural additions
-  (fenv raise sites, non-RNE rounding modes) that change the hot-path
-  cost profile, and the 1.0-era baseline no longer reflects the
-  intended 1.1 steady state. Future PRs gate against the 1.1 baseline;
-  the 1.0 → 1.1 migration cost is this CHANGELOG's record and is not
-  re-gated.
-- **Consumer recipe.** Consumers needing the 1.0-shape cost profile
-  on transcendentals with only the Track B2 round-pack cost on
-  simple arithmetic build with `-DSOFT_FP64_FENV=disabled`; the
-  raise sites compile to `(void)0` and the `sf64_fe_*` public
-  surface is a no-op shim. Consumers that want fenv must accept the
-  TLS store per round-pack call.
-- **Bench gate — TLS fenv cheap-op carveout.** On Apple Silicon
-  every `SOFT_FP64_FENV=tls` raise site pays a ~5 ns structural
-  cost from the `__tlv_get_addr` roundtrip that guards the
-  thread-local accumulator. The floor is architectural — it does
-  not scale with op complexity, so on an op whose 1.0 baseline is
-  already sub-15 ns the ~5 ns adder reads as a large percentage
-  regression against a small denominator. The clearest example is
-  `sf64_to_i32`: a 2.68 ns 1.0 baseline against an ~7 ns tls-mode
-  number shows as +166% even though the absolute cost is the same
-  ~5 ns every other cheap op pays. Every `to_iN` / `to_uN` entry
-  already raises from 4–6 sites (so the accumulator has no further
-  ns to save on the current design) and the `initial-exec` TLS
-  model is already applied, so the floor is not a fixable
-  implementation issue at this layer.
-- **Carveout flag.** `bench/compare.py` now accepts
-  `--cheap-op-absolute-budget=<ns>` (default 0.0 = off). When set,
-  any op with a baseline below the module-level
-  `CHEAP_OP_NS_THRESHOLD = 15.0` ns is exempted from the percentage
-  gate provided `abs(current - baseline) <= budget`. Ops at or
-  above 15 ns continue to gate on the percentage rule; a cheap op
-  that breaches both the percentage and the absolute budget still
-  reports as a regression (belt-and-suspenders). CI's
-  `bench-regression` job opts in at `--cheap-op-absolute-budget=5.0`
-  alongside the existing `--threshold=0.20`. The `SOFT_FP64_FENV=
-  explicit` caller-state ABI listed under Post-1.1 in `TODO.md` is
-  the path that removes the TLS floor entirely — at which point the
-  carveout can retire.
+- Inlined RNE arithmetic in SLEEF's double-double helpers and accumulated flags
+  locally before flushing to TLS at each public entry point.
+- Refreshed the baseline for the added fenv/rounding costs and introduced the
+  optional cheap-operation absolute budget (5 ns in CI, alongside 20%).
+- Preserved the release's timings and configuration in
+  [the version 1.1 performance note](PERFORMANCE-1.1.md).
 
 ### Integrity guarantees
 
@@ -682,7 +626,7 @@ Silicon resolve against soft-fp64 instead of trapping.
   `sincos`, `asin`, `acos`, `atan`, `exp`, `exp2`, `exp10`, `expm1`,
   `log`, `log2`, `log10`, `log1p`, `cbrt`, `cosh`, `acosh`, `atanh`.
   Gated by `tests/mpfr/test_mpfr_diff.cpp` (independent oracle)
-  plus `tests/test_transcendental_1ulp.cpp` (libm consistency).
+  plus `tests/test_transcendental_libm.cpp` (libm consistency).
 - **Transcendentals — U35 (≤8 ULP vs MPFR 200-bit).** `tan`, `atan2`,
   `sinh`, `tanh`, `asinh`, `pi`-variants (`sinpi`, `cospi`, `tanpi`,
   `asinpi`, `acospi`, `atanpi`, `atan2pi`), and the `pow` / `rootn`

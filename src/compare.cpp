@@ -20,7 +20,7 @@
 // Implementation note: this TU deliberately never performs host-`double`
 // arithmetic. Every decision goes through integer bit ops on `uint64_t`
 // (ordering is resolved via a two's-complement transform of the IEEE
-// sign-magnitude bit pattern) because the library will eventually run on
+// sign-magnitude bit pattern) so the library can run on
 // a device with no fp64 FPU, where host `<` on `double` would either be
 // emulated (calls back into us — infinite recursion risk) or generate an
 // unsupported instruction.
@@ -78,8 +78,6 @@ SF64_ALWAYS_INLINE bool ordered_eq(uint64_t a, uint64_t b) noexcept {
 // Core predicate switch. `always_inline` so that when the caller passes a
 // constant `pred`, clang collapses this to a single branch.
 SF64_ALWAYS_INLINE int fcmp_impl(double a_, double b_, int pred) noexcept {
-    // SAFETY: bit_cast double -> uint64_t — both 8 bytes, no trap
-    // representations; defined by __builtin_bit_cast semantics.
     const uint64_t a = bits_of(a_);
     const uint64_t b = bits_of(b_);
     const bool nan = is_nan_bits(a) || is_nan_bits(b);
@@ -122,7 +120,6 @@ SF64_ALWAYS_INLINE int fcmp_impl(double a_, double b_, int pred) noexcept {
 }
 
 SF64_ALWAYS_INLINE double fmin_precise_impl(double a_, double b_) noexcept {
-    // SAFETY: bit_cast double -> uint64_t — see fcmp_impl rationale.
     const uint64_t a = bits_of(a_);
     const uint64_t b = bits_of(b_);
     if (is_nan_bits(a) || is_nan_bits(b)) {
@@ -138,7 +135,6 @@ SF64_ALWAYS_INLINE double fmin_precise_impl(double a_, double b_) noexcept {
 }
 
 SF64_ALWAYS_INLINE double fmax_precise_impl(double a_, double b_) noexcept {
-    // SAFETY: bit_cast double -> uint64_t — see fcmp_impl rationale.
     const uint64_t a = bits_of(a_);
     const uint64_t b = bits_of(b_);
     if (is_nan_bits(a) || is_nan_bits(b)) {

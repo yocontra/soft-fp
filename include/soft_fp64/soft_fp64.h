@@ -7,7 +7,7 @@
 // without hardware fp64: Apple GPUs, mobile / tile-based GPUs, WebGPU-class
 // devices, embedded DSPs, FPGAs, custom accelerators.
 //
-// This umbrella header pulls in the public-facing scaffolding. The actual
+// This umbrella header pulls in the public storage and lane helpers. The actual
 // soft-fp64 entry points live in dedicated headers; include them directly if
 // you only need a subset.
 //

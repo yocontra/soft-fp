@@ -1,7 +1,7 @@
 #include "soft_fp128/soft_f128.h"
 
+#include "test_check.h"
 #include <atomic>
-#include <cassert>
 #include <thread>
 
 int main() {
@@ -28,5 +28,5 @@ int main() {
     start.store(true, std::memory_order_release);
     a.join();
     b.join();
-    assert(failures.load() == 0);
+    SF_CHECK(failures.load() == 0);
 }

@@ -682,16 +682,12 @@ extern "C" double sf64_rem(double a, double b) {
         return a;
     }
 
-    // Shift b up to match a's exponent: we'll iterate from exp_diff down
-    // to zero, each step subtracting b<<k from a when a >= b<<k.
+    // Long division consumes one exponent position per iteration. Subtract
+    // the divisor when it fits, then shift the residual for the next position.
     int32_t k = exp_a - exp_b;
 
-    // Use 64-bit space: sig_a has MSB at bit 52. We can freely shift sig_b
-    // left by up to (63 - 52) = 11 without overflow, but k may be larger.
-    // So we emulate: at each step compare sig_a with sig_b << (min(k, 0)),
-    // actually easier: keep aligning b up and subtracting.
-    //
-    // Iterative long mod:
+    // Both significands start with bit 52 set. After subtraction sig_a is
+    // less than sig_b; the subsequent shift therefore fits in 54 bits.
     while (k >= 0) {
         if (sig_a >= sig_b) {
             sig_a -= sig_b;

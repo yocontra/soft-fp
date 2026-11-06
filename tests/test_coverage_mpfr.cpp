@@ -1,20 +1,10 @@
 // Coverage extensions that require MPFR arbitrary-precision references.
 //
-// Two sweeps live here:
-//
-//   1. sf64_powr MPFR sweep. powr(x, y) requires x > 0. ~1024 log-uniform
-//      (x, y) pairs in x ∈ [1e-200, 1e200], y ∈ [-50, 50]. ≤4 ULP band.
-//
-//   2. Payne-Hanek MPFR stress for sin/cos/tan. x = k·π + δ for
-//      k ∈ {2^40, 2^45, 2^50} and δ ∈ {0, ±ε, ±1e-12}. ≤4 ULP vs MPFR
-//      200-bit reference.
-//
-// Skipped if MPFR is not available on the host. MPFR detection/linkage is
-// driven from the parent tests/CMakeLists.txt.
-//
-// Tolerance is tighter here than in the libm-diff test because MPFR at
-// 200 bits rounded to double is the mathematically correct rounded value;
-// any observed delta is a soft-fp64 bug, not oracle noise.
+// The powr sweep uses 1024 pairs with log-uniform x in [1e-100, 1e100]
+// and uniform y in [-3, 3]. The Payne-Hanek sweep tests sin/cos/tan near
+// k*pi for the six magnitudes and five offsets defined in main().
+// Both use a 200-bit MPFR reference and enforce a four-ULP bound.
+// Built when MPFR is available; see tests/CMakeLists.txt.
 //
 // SPDX-License-Identifier: MIT
 
@@ -114,8 +104,8 @@ inline double mpfr_ref_1arg(int (*fn)(mpfr_t, const mpfr_t, mpfr_rnd_t), double 
 // Compute k·π + δ *at the MPFR precision* so the test input itself is
 // represented as faithfully as possible. The double we hand to sf64_* is
 // RNDN-rounded from that MPFR value; the oracle operates on the same
-// rounded double. This matches the task spec: we test soft-fp64's argument
-// reduction, not how faithfully `k·π + δ` is expressible in double.
+// rounded double. This tests soft-fp64's argument reduction rather than how faithfully `k·π + δ` is
+// expressible in double.
 inline double build_kpi_plus_delta(double k, double delta) {
     mpfr_t pi, km, dm, tmp;
     mpfr_init2(pi, ORACLE_PREC);
@@ -257,7 +247,7 @@ int main() {
     std::vector<Stats> results;
 
     // ------------------------------------------------------------------
-    // Task 3 — sf64_powr sweep vs MPFR 200-bit `powr`, ≤4 ULP.
+    // sf64_powr sweep vs MPFR 200-bit `powr`, ≤4 ULP.
     // ------------------------------------------------------------------
     {
         Stats s;
@@ -294,14 +284,11 @@ int main() {
     }
 
     // ------------------------------------------------------------------
-    // Task 5 — Payne-Hanek stress (MPFR-referenced), ≤4 ULP.
+    // Payne-Hanek stress (MPFR-referenced), ≤4 ULP.
     //
-    // Covers `|x| >> 1` where Cody-Waite would lose all significance and
-    // Payne-Hanek is the only correctness path. The multipliers exercise
-    // the full Payne-Hanek table: 2^40/45/50 are just past the 1e14
-    // switchover; 2^500 and 2^900 push to the large end of the SLEEF
-    // `rempitabdp` table entries. 2^1000 is within epsilon of DBL_MAX
-    // and exercises the final table entry.
+    // The selected k*pi inputs span the Cody-Waite and Payne-Hanek
+    // reduction paths. Magnitudes through 2^1000 sample high-exponent
+    // Payne-Hanek cases; this is not exhaustive reduction-table coverage.
     // ------------------------------------------------------------------
     {
         const double ks[] = {std::ldexp(1.0, 40),  std::ldexp(1.0, 45),  std::ldexp(1.0, 50),
