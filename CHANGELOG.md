@@ -18,6 +18,8 @@ are unchanged.
 
 ### Fixed
 
+- Moved macOS CI jobs from the retired `macos-14` image to `macos-26`,
+  retaining Apple Silicon coverage and the existing benchmark budgets.
 - Kept runtime test expectations active in Release builds and replaced the
   ineffective address-only linkage smoke with checks that exercise the API.
 - Made benchmark comparisons reject incomplete or malformed measurements by

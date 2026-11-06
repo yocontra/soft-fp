@@ -86,7 +86,7 @@ python3 bench/compare.py current.json bench/baseline.json \
   --threshold=0.20 --cheap-op-absolute-budget=5.0
 ```
 
-The PR-only `bench-regression` job runs on `macos-14`. It uses a 20% threshold
+The PR-only `bench-regression` job runs on `macos-26`. It uses a 20% threshold
 and permits an absolute increase of at most 5 ns for operations whose baseline
 is below 15 ns. Operations at or above 15 ns use only the percentage gate;
 operations below the 2 ns noise floor remain excluded from timing comparisons.
@@ -106,7 +106,7 @@ to hide a slowdown is not a fix.
 
 The committed baseline records hardware, OS, compiler, build type, and sampling
 method in its `environment` object. Its Apple M2 Max measurements are not a
-claim that every `macos-14` runner is the same machine.
+claim that every `macos-26` runner is the same machine.
 
 For a proposed refresh:
 

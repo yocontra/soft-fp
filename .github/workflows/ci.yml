@@ -24,8 +24,8 @@ jobs:
       fail-fast: false
       matrix:
         # Ubuntu 24.04 supplies MPFR 4.2 APIs used by the precision oracles.
-        # Linux covers x86-64; macos-14 covers Apple Silicon.
-        os: [macos-14, ubuntu-24.04]
+        # Linux covers x86-64; macos-26 covers Apple Silicon.
+        os: [macos-26, ubuntu-24.04]
         build_type: [Debug, Release]
         compiler: [default]
         include:
@@ -426,7 +426,7 @@ jobs:
           retention-days: 7
 
   # ---------------------------------------------------------------------------
-  # 5. Bench regression gate. PR-only, enforcing, macos-14.
+  # 5. Bench regression gate. PR-only, enforcing, macos-26.
   # The baseline records its measurement hardware and compiler. CI retains
   # the 20% gate and 5 ns cheap-op budget below for shared-runner variation.
   # Investigate drift with repeated measurements; baseline updates require
@@ -435,7 +435,7 @@ jobs:
   bench-regression:
     name: bench regression
     if: github.event_name == 'pull_request'
-    runs-on: macos-14
+    runs-on: macos-26
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
 
@@ -541,7 +541,7 @@ jobs:
   comparative-bench:
     name: comparative bench (vs SoftFloat / soft_double)
     if: github.event_name == 'workflow_dispatch'
-    runs-on: macos-14
+    runs-on: macos-26
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
 
